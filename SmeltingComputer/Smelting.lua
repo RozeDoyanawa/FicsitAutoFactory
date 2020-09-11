@@ -706,11 +706,16 @@ function paintStation(station, x, y)
     local width = stationWidth
     local height = 5
     local c = 0
+    local pdirection
     for _,input in pairs(station.inputs) do
         --print(input.name .. " :before " .. tostring(input.paintX))
         input = input.bus
-        if input.paintX > mx then
+        if input.pdirection == "right" and input.paintX > mx then
             mx = input.paintX
+            pdirection = "right"
+        elseif input.pdirection == "left" and input.paintX < mx or mx == 0 then
+            mx = input.paintX
+            pdirection = "left"
         end
         computer.skip()
     end
@@ -718,6 +723,9 @@ function paintStation(station, x, y)
 
     local cy = y + 2
     local cx = mx
+    if pdirection == "left" then
+        mx = mx - width
+    end
     screens:setForeground(0.7,0.3,0.7,1)
     if station.remaining > 0 then
         screens:setForeground(0.7,0.7,0.3,1)
@@ -739,17 +747,21 @@ function paintStation(station, x, y)
         cy = cy + 1
     end
     if printQueue then
-        local f = station.queue.first
-        while f do
-            screens:setForeground(0.7,0.7,0.2,1)
-            screens:dprint(0, mx + 2, cy, "→")
-            screens:setForeground(0.7,0.7,0.7,1)
-            screens:dprint(0, mx + 4, cy, f.value.name)
-            screens:setForeground(0.3,0.3,1,1)
-            screens:dprint(0, mx + width - 2 - 5, cy, string.format("%3d", f.value.count))
-            cy = cy + 1
-            f = f.next
-            computer.skip()
+        for qname,q in pairs(station.queue) do
+            local f = q.first
+            while f do
+                screens:setForeground(0.7,0.7,0.4,1)
+                screens:dprint(0, mx + 2, cy, qname)
+                screens:setForeground(0.7,0.7,0.2,1)
+                screens:dprint(0, mx + 3, cy, "→")
+                screens:setForeground(0.7,0.7,0.7,1)
+                screens:dprint(0, mx + 5, cy, f.value.name)
+                screens:setForeground(0.3,0.3,1,1)
+                screens:dprint(0, mx + width - 2 - 5, cy, string.format("%3d", f.value.receivecount))
+                cy = cy + 1
+                f = f.next
+                computer.skip()
+            end
         end
     end
 
@@ -779,7 +791,11 @@ function paintStation(station, x, y)
     screens:setForeground(0.3,0.3,0.3,1)
 
 
-    x = mx + width
+    if pdirection == "right" then
+        x = mx + width
+    elseif pdirection == "left" then
+        x = mx
+    end
     for _,input in pairs(station.inputs) do
         input = input.bus
         input.paintX = x
@@ -791,18 +807,29 @@ end
 
 function printSnake(bus, lowX, fromY, toY, sub, maxsnake)
     local __y = toY
-    screens:dfill(0, bus.paintX - 1, bus.paintY, sub + 1, 1, "═")
-    screens:dprint(0, bus.paintX + sub, bus.paintY, "╗")
-    screens:dfill(0, bus.paintX + sub, bus.paintY + 1, 1, toY - bus.paintY - 3 + sub, "║")
-    screens:dprint(0, bus.paintX + sub, __y - 2 + sub, "╝")
-    screens:dfill(0, lowX + 2 + sub, __y - 2 + sub, bus.paintX + sub - (lowX + 2 + sub), 1, "═")
-    screens:dprint(0, lowX + 2 + sub, __y - 2 + sub, "╔")
-    local lowY = __y - sub + maxsnake
-    screens:dfill(0, lowX + 2 + sub, __y - 1 + sub, 1, (lowY - (__y - 1 + sub)), "║")
-    screens:dprint(0, lowX + 2 + sub, lowY, "╚")
-    fromY = __y + maxsnake - sub
-    bus.paintY = fromY
-    bus.paintX = lowX + 3 + sub
+    local oldDirection = bus.pdirection
+    if oldDirection == "right" then
+        screens:dfill(0, bus.paintX - 1, bus.paintY, sub + 1, 1, "═")
+        screens:dprint(0, bus.paintX + sub, bus.paintY, "╗")
+        screens:dfill(0, bus.paintX + sub, bus.paintY + 1, 1, toY - bus.paintY - 3 + sub, "║")
+        screens:dprint(0, bus.paintX + sub, __y - 2 + sub, "╝")
+        screens:dfill(0, lowX + 2 + sub, __y - 2 + sub, bus.paintX + sub - (lowX + 2 + sub), 1, "═")
+        fromY = __y + maxsnake + sub - 3
+        bus.paintY = __y - 2 + sub
+        bus.paintX = bus.paintX + 2
+        bus.pdirection = "left"
+    else
+        local x = lowX - 1
+        screens:dfill(0, x + sub, bus.paintY, bus.paintX - x - sub, 1, "═")
+        screens:dprint(0, x + sub, bus.paintY, "╔")
+        screens:dfill(0, x + sub, bus.paintY + 1, 1, toY - bus.paintY - 3 + sub, "║")
+        screens:dprint(0, x + sub, __y - 2 + sub, "╚")
+        screens:dfill(0, x + sub + 1, __y - 2 + sub, maxsnake, 1, "═")
+        fromY = __y + maxsnake - sub - 3
+        bus.paintY = __y - 2 + sub
+        bus.paintX = x + sub + maxsnake
+        bus.pdirection = "right"
+    end
     computer.skip()
     return lowX, fromY
 end
@@ -824,12 +851,14 @@ function printBus2(bus, x, y)
         c = c + 1
     end
     --t = c - t
-    print("Y=" .. tostring(y) .. ", t=" ..tostring(t) .. ", c=" ..tostring(c))
-    for qy=y,y + 1 + t,1 do
-        screens:dprint(0, x, qy, "║")
-    end
+    --print("Y=" .. tostring(y) .. ", t=" ..tostring(t) .. ", c=" ..tostring(c))
+    screens:dfill(0, x, y, 1, t + 2, "║")
+    --for qy=y,y + 1 + t,1 do
+    --    screens:dprint(0, x, qy, "║")
+    --end
     screens:dprint(0, x, y + t * 2 + 1, "╚")
     y = y + 1 + t * 2
+    screens:dfill(0, x + 1, y, 2 + c * 2 - x, 1, "═")
     for qx=x + 1,2 + (c) * 2 + 1,1 do
         screens:dprint(0, qx, y, "═")
     end
@@ -837,7 +866,7 @@ function printBus2(bus, x, y)
     local n = false
     local bx = x + c * 2
     local cindex = 0
-    local drawWidth = screens.cellWidth - stationWidth - 50
+    local drawWidth = screens.cellWidth - stationWidth - 30
     local maxY = _y
     local maxX = 0
     bus.paintX = bx
@@ -859,7 +888,7 @@ function printBus2(bus, x, y)
     local qx = 0; local qy = 0
     for _,q in pairs(smelters) do
         computer.skip()
-        if bus.paintX > drawWidth then
+        if (bus.pdirection == "right" and bus.paintX > drawWidth - 1) or (bus.pdirection == "left" and bus.paintX < bx + 3) then
             x, _y = printSnake(bus, bx, _y, maxY + 5, cindex, 2)
             if bus.paired then
                 local mod = 1
@@ -910,6 +939,7 @@ function printScreen()
     local y = 5
     for _,bus in pairs(sortedBusses) do
         bus.painted = false
+        bus.pdirection = "right"
     end
     for _,bus in pairs(sortedBusses) do
         local y = 0
@@ -919,11 +949,9 @@ function printScreen()
         end
     end
     screens:setForeground(0.3,0.3,0.3,1)
-    for _y = 0,screens.cellHeight,1 do
-        screens:dprint(0,  screens.cellWidth - 50, _y, "┃")
-    end
+    screens:dfill(0,  screens.cellWidth - 30, 0, 1, screens.cellHeight, "┃")
     screens:setForeground(0.7,0.7,0.7,1)
-    x = screens.cellWidth - 49
+    x = screens.cellWidth - 29
     screens:dprint(0, x,0,"Future");
     y = 1
     local item = craftingQueue.first
@@ -932,7 +960,7 @@ function printScreen()
         while item do
             m = m + 1
             screens:setForeground(0.7,0.7,0.7,1)
-            screens:dprint(0,  x+ 2, y, item.value.name)
+            screens:dprint(0,  x+ 2, y, item.value.recipeName)
             screens:setForeground(0.3,0.3,1,1)
             screens:dprint(0, x + 23, y, string.format("%3d", item.value.count))
             item = item.next
@@ -1203,18 +1231,43 @@ function processPeriodic(result)
 end
 
 rmessage("Computer started")
+local seldomCounter = 0
+local nilCounter = 0
+local timeout = 1
 
 while true do
-    local result = {event.pull(0) }
-    local status, err = pcall(processEvent, result)
+    local result = {event.pull(timeout) }
+    if result[1] then
+        timeout = 0
+        nilCounter = 0
+        --print("Timeout reset")
+    elseif nilCounter == 1000 then
+        timeout = 1
+        --print("Slow Timeout")
+    else
+        nilCounter = nilCounter + 1
+    end
+    local status, err
+    status, err = pcall(processEvent, result)
     if err then
         rerror("Error in processEvent; ".. tostring(err))
         error(err)
     end
-    local status, err = pcall(processPeriodic, result)
+    status, err = pcall(processPeriodic, result)
     if err then
         rerror("Error in processPeriodic; ".. tostring(err))
         error(err)
     end
-    printScreen()
+
+    if timeout == 1 or seldomCounter <= 0 then
+        --printScreen()
+        status, err = pcall(printScreen)
+        if err then
+            rerror("Error in print; ".. tostring(err))
+            error(err)
+        end
+        seldomCounter = 5000
+    else
+        seldomCounter = seldomCounter - 1
+    end
 end

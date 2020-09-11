@@ -124,7 +124,7 @@ function createStation(comp, stationIndex, type, prefix)
             inv:flush()
         elseif tostring(inv:getStack(0).item.type) ~= "Power Shard" then
             if inv.ItemCount > 0 then
-                rmessage(station.name .. " had " .. tostring(inv.ItemCount) .. "residual items; cleared; " .. inv:getStack(0).item.type)
+                rmessage(station.name .. " had " .. tostring(inv.ItemCount) .. "residual items; cleared; " .. inv:getStack(0).item.type:getName())
             end
             inv:flush()
         end
@@ -303,7 +303,7 @@ function paintStation(station, x, y)
     local width = stationWidth
     local height = 5
     local c = 0
-    local pdirection = nil
+    local pdirection
     for _,input in pairs(station.inputs) do
         --print(input.name .. " :before " .. tostring(input.paintX))
         if input.pdirection == "right" and input.paintX > mx then
@@ -322,64 +322,66 @@ function paintStation(station, x, y)
     if pdirection == "left" then
         mx = mx - width
     end
-    screens:dsetForeground(0, 0.7,0.3,0.7,1)
-    if station.toProduce > 0 then
-        screens:dsetForeground(0, 0.7,0.7,0.3,1)
-    elseif station.error then
-        screens:dsetForeground(0, 1,0.3,0.3,1)
-    else
-        screens:dsetForeground(0, 0.7,1,0.7,1)
-    end
-    screens:dprint(0, mx + 0, cy, station.name)
-    cy = cy + 1
-
-    if station.toProduce > 0 then
-        screens:dsetForeground(0, 0.1,0.7,0.1,1)
-        screens:dprint(0, mx + 0, cy, "←")
-        screens:dsetForeground(0, 0.7,0.7,0.7,1)
-        screens:dprint(0, mx + 2, cy, station.workObject)
-        screens:dsetForeground(0, 0.3,0.3,1,1)
-        screens:dprint(0, mx + width - 2 - 5, cy, string.format("%3d", station.toProduce))
-        cy = cy + 1
-    end
-    if printQueue then
-        local f = station.queue.first
-        while f do
-            screens:dsetForeground(0, 0.7,0.7,0.2,1)
-            screens:dprint(0, mx + 2, cy, "→")
-            screens:dsetForeground(0, 0.7,0.7,0.7,1)
-            screens:dprint(0, mx + 4, cy, f.value.name)
-            screens:dsetForeground(0, 0.3,0.3,1,1)
-            screens:dprint(0, mx + width - 2 - 5, cy, string.format("%3d", f.value.count))
-            cy = cy + 1
-            f = f.next
-            computer.skip()
+    --print("pdirection="..pdirection..", mx=" .. tostring(mx) .. ", cx=" .. tostring(cx) .. ", cy=" .. tostring(cy))
+    if true then
+        screens:dsetForeground(0, 0.7,0.3,0.7,1)
+        if station.toProduce > 0 then
+            screens:dsetForeground(0, 0.7,0.7,0.3,1)
+        elseif station.error then
+            screens:dsetForeground(0, 1,0.3,0.3,1)
+        else
+            screens:dsetForeground(0, 0.7,1,0.7,1)
         end
-    end
+        screens:dprint(0, mx + 0, cy, station.name)
+        cy = cy + 1
 
-    c = 0
-    screens:dsetForeground(0, 0.7,0.7,0.5,1)
-    screens:dprint(0, mx - 1, y + 1, "┌")
-    screens:dfill(0, mx, y + 1, width - 2, 1, "─")
-    screens:dfill(0, mx, y + 1 + height, width - 2, 1, "─")
-    c = 0
-    for _,input in pairs(station.inputs) do
-        screens:dsetForeground(0, 0.3,0.3,0.3,1)
-        screens:dfill(0, input.paintX, input.paintY, mx - input.paintX + width, 1, "═")
-        screens:dprint(0, mx + c, input.paintY, "╦")
-        screens:dfill(0, mx + c, input.paintY + 1, 1, y - input.paintY - 1, "║")
-        computer.skip()
+        if station.toProduce > 0 then
+            screens:dsetForeground(0, 0.1,0.7,0.1,1)
+            screens:dprint(0, mx + 0, cy, "←")
+            screens:dsetForeground(0, 0.7,0.7,0.7,1)
+            screens:dprint(0, mx + 2, cy, station.workObject)
+            screens:dsetForeground(0, 0.3,0.3,1,1)
+            screens:dprint(0, mx + width - 2 - 5, cy, string.format("%3d", station.toProduce))
+            cy = cy + 1
+        end
+        if printQueue then
+            local f = station.queue.first
+            while f do
+                screens:dsetForeground(0, 0.7,0.7,0.2,1)
+                screens:dprint(0, mx + 2, cy, "→")
+                screens:dsetForeground(0, 0.7,0.7,0.7,1)
+                screens:dprint(0, mx + 4, cy, f.value.name)
+                screens:dsetForeground(0, 0.3,0.3,1,1)
+                screens:dprint(0, mx + width - 2 - 5, cy, string.format("%3d", f.value.count))
+                cy = cy + 1
+                f = f.next
+                computer.skip()
+            end
+        end
+
+        c = 0
         screens:dsetForeground(0, 0.7,0.7,0.5,1)
-        screens:dprint(0, mx + c, y + 1, "╨")
-        c = c + 2
+        screens:dprint(0, mx - 1, y + 1, "┌")
+        screens:dfill(0, mx, y + 1, width - 2, 1, "─")
+        screens:dfill(0, mx, y + 1 + height, width - 2, 1, "─")
+        c = 0
+        for _,input in pairs(station.inputs) do
+            screens:dsetForeground(0, 0.3,0.3,0.3,1)
+            screens:dfill(0, input.paintX, input.paintY, mx - input.paintX + width, 1, "═")
+            screens:dprint(0, mx + c, input.paintY, "╦")
+            screens:dfill(0, mx + c, input.paintY + 1, 1, y - input.paintY - 1, "║")
+            computer.skip()
+            screens:dsetForeground(0, 0.7,0.7,0.5,1)
+            screens:dprint(0, mx + c, y + 1, "╨")
+            c = c + 2
+        end
+        screens:dprint(0, mx + width - 2, y + 1, "┐")
+        screens:dprint(0, mx - 1, y + 1 + height, "└")
+        screens:dprint(0, mx + width - 2, y + 1 + height, "┘")
+        screens:dfill(0, mx - 1, y + 2, 1, height - 1, "│")
+        screens:dfill(0, mx + width - 2, y + 2, 1, height - 1, "│")
+        screens:dsetForeground(0, 0.3,0.3,0.3,1)
     end
-    screens:dprint(0, mx + width - 2, y + 1, "┐")
-    screens:dprint(0, mx - 1, y + 1 + height, "└")
-    screens:dprint(0, mx + width - 2, y + 1 + height, "┘")
-    screens:dfill(0, mx - 1, y + 2, 1, height - 1, "│")
-    screens:dfill(0, mx + width - 2, y + 2, 1, height - 1, "│")
-    screens:dsetForeground(0, 0.3,0.3,0.3,1)
-
     if pdirection == "right" then
         x = mx + width
     elseif pdirection == "left" then
@@ -414,23 +416,25 @@ function printSnake(bus, lowX, fromY, toY, sub, maxsnake)
     local __y = toY
     local oldDirection = bus.pdirection
     if oldDirection == "right" then
-        --screens:dfill(0, bus.paintX - 1, bus.paintY, sub + 1, 1, "═")
-        --screens:dprint(0, bus.paintX + sub, bus.paintY, "╗")
-        --screens:dfill(0, bus.paintX + sub, bus.paintY + 1, 1, toY - bus.paintY - 3 + sub, "║")
-        --screens:dprint(0, bus.paintX + sub, __y - 2 + sub, "╝")
-        --screens:dfill(0, lowX + 2 + sub, __y - 2 + sub, bus.paintX + sub - (lowX + 2 + sub), 1, "═")
-        fromY = __y + maxsnake - sub
-        bus.paintY = toY + sub
-        bus.paintX = bus.paintX
-        --bus.pdirection = "left"
+        screens:dfill(0, bus.paintX - 1, bus.paintY, sub + 1, 1, "═")
+        screens:dprint(0, bus.paintX + sub, bus.paintY, "╗")
+        screens:dfill(0, bus.paintX + sub, bus.paintY + 1, 1, toY - bus.paintY - 3 + sub, "║")
+        screens:dprint(0, bus.paintX + sub, __y - 2 + sub, "╝")
+        screens:dfill(0, lowX + 2 + sub, __y - 2 + sub, bus.paintX + sub - (lowX + 2 + sub), 1, "═")
+        fromY = __y + maxsnake + sub - 3
+        bus.paintY = __y - 2 + sub
+        bus.paintX = bus.paintX + 3
+        bus.pdirection = "left"
     else
-        --screens:dfill(0, bus.paintX - 1, bus.paintY, sub + 1, 1, "═")
-        --screens:dprint(0, bus.paintX + sub, bus.paintY, "╔")
-        --screens:dfill(0, bus.paintX + sub, bus.paintY + 1, 1, toY - bus.paintY - 3 + sub, "║")
-        --screens:dprint(0, bus.paintX + sub, __y - 2 + sub, "╚")
-        fromY = __y + maxsnake - sub
-        bus.paintY = fromY
-        bus.paintX = lowX + 3 + sub
+        local x = lowX
+        screens:dfill(0, x + sub, bus.paintY, bus.paintX - x - sub, 1, "═")
+        screens:dprint(0, x + sub, bus.paintY, "╔")
+        screens:dfill(0, x + sub, bus.paintY + 1, 1, toY - bus.paintY - 3 + sub, "║")
+        screens:dprint(0, x + sub, __y - 2 + sub, "╚")
+        screens:dfill(0, x + sub + 1, __y - 2 + sub, maxsnake, 1, "═")
+        fromY = __y + maxsnake + sub - 3
+        bus.paintY = __y - 2 + sub
+        bus.paintX = x + sub + maxsnake
         bus.pdirection = "right"
     end
     computer.skip()
@@ -504,8 +508,8 @@ function printBus2(bus, x, y)
                         end
                     end
                     if depPainted and paint then
-                        if child.paintX > drawWidth - 1 then
-                            local maxSnake = 0
+                        if (child.pdirection == "right" and child.paintX > drawWidth - 1) or (child.pdirection == "left" and child.paintX < bx + 4) then
+                            local maxSnake = 1
                             if child.paired then
                                 maxSnake = 2
                             end
@@ -555,7 +559,7 @@ function printScreen()
         end
     end
     screens:dsetForeground(0, 0.3,0.3,0.3,1)
-    screens:dfill(0,  screens.cellWidth - 30, _y, 1, screens.cellHeight, "┃")
+    screens:dfill(0,  screens.cellWidth - 30, 0, 1, screens.cellHeight, "┃")
     --for _y = 0,screens.cellHeight,1 do
     --    screens:dprint(0,  screens.cellWidth - 50, _y, "┃")
     --end
@@ -700,8 +704,8 @@ while true do
         error(err)
     end
     if seldomCounter == 0 then
-        --printScreen()
-        status, err = pcall(printScreen)
+        printScreen()
+        --status, err = pcall(printScreen)
         if err then
             rerror("Error in print; ".. tostring(err))
             error(err)

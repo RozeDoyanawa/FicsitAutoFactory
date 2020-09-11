@@ -91,6 +91,9 @@ end
 
 
 function screens:dprint(index, x,y, text)
+    if x < 0 or y < 0 then
+        error("Negative x or y, x="..tostring(x)..", y=" .. tostring(y))
+    end
     if screens.panels[index] then
         screens.panels[index].gpu:setText(x, y, text)
     end
@@ -115,6 +118,9 @@ end
 
 
 function screens:dfill(index, x,y,w,h,c)
+    if x < 0 or y < 0 or x + w < 0 or y + h < 0 then
+        error("Negative x or y, x="..tostring(x)..", y=" .. tostring(y)..", w=" .. tostring(w)..", h=" .. tostring(h))
+    end
     if screens.panels[index] then
         screens.panels[index].gpu:fill(x,y,w,h,c)
     end

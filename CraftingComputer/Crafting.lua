@@ -22,7 +22,7 @@ end
 
 stationOutputSlot = 2
 
-screens.init("Crafting", 1, 1, math.floor(100 * 1.5), math.floor(45 * 1.5))
+screens.init("Crafting", 1, 1, math.floor(100 * 1.4), math.floor(45 * 1.4))
 
 local panel = component.proxy(component.findComponent("Crafting Panel 1")[1])
 
