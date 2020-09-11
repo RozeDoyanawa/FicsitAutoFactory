@@ -89,6 +89,13 @@ function gPrint(x,y,text)
     end
 end
 
+
+function screens:dprint(index, x,y, text)
+    if screens.panels[index] then
+        screens.panels[index].gpu:setText(x, y, text)
+    end
+end
+
 function screens:print(x, y, text)
     --print(x)
     --print(y)
@@ -102,7 +109,32 @@ function screens:print(x, y, text)
     if screens.panels[index] then
         screens.panels[index].gpu:setText(x - (_x * screens.cellWidth), y - (_y * screens.cellHeight), text)
     else
-        print("No Screen")
+        --print("No Screen")
+    end
+end
+
+
+function screens:dfill(index, x,y,w,h,c)
+    if screens.panels[index] then
+        screens.panels[index].gpu:fill(x,y,w,h,c)
+    end
+end
+
+function screens:fill(x, y, text)
+    --print(x)
+    --print(y)
+    --print(text)
+    local _x = math.floor(x / screens.cellWidth)
+    local _y = math.floor(y / screens.cellHeight)
+    local index = _y * screens.gridWidth + _x
+    --print ("index: " .. tostring(index))
+    --print ("x = "..tostring(x - (_x * screens.cellWidth)))
+    --print ("y = "..tostring(y - (_y * screens.cellHeight)))
+    if screens.panels[index] then
+        screens.panels[index].gpu:fill(x - (_x * screens.cellWidth),y - (_y * screens.cellHeight),w,h,c)
+        --screens.panels[index].gpu:fill(x , y , text)
+    else
+        --print("No Screen")
     end
 end
 
@@ -126,6 +158,11 @@ end
 function screens:setForeground(r,g,b,a)
     for _,v in pairs(screens.panels) do
         v.gpu:setForeground(r,g,b,a)
+    end
+end
+function screens:dsetForeground(index, r,g,b,a)
+    if screens.panels[index] then
+        screens.panels[index].gpu:setForeground(r,g,b,a)
     end
 end
 

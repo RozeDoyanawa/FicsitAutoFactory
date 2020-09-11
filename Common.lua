@@ -128,12 +128,18 @@ craftSystems = {
 }
 
 function registerEvent(key, instance, callback, triggerHandlers)
-    eventHandlers[key] = {
+    local evt = {
         instance = instance,
         reference = key,
         callback = callback,
         triggers = triggerHandlers
     }
+    if key and key.hash then
+        print("Registering event by hash: " .. key.hash)
+        eventHandlers[key.hash] = evt
+    else
+        eventHandlers[key] = evt
+    end
 end
 
 local itemManagerAddress = "429823144AEF8331B86B00943C6576F9"
@@ -160,9 +166,23 @@ end)
 
 function processEvent(pullResult)
     if pullResult[1] and pullResult[1] == "FileSystemUpdate" then
+        if eventHandlers["FileSystemUpdate"] then
+            eventHandlers["FileSystemUpdate"].callback(pullResult)
+        end
         return
     end
     if pullResult[2] then
+        if pullResult[2].hash and eventHandlers[pullResult[2].hash] then
+            print("Event by hash: " .. pullResult[2].hash .. ", " .. tostring(pullResult[2]))
+            local v = eventHandlers[pullResult[2].hash]
+            if v.callback then
+                v.callback(v.instance, pullResult[1], pullResult, 2)
+            end
+            if v.triggers and v.triggers[pullResult[1]] then
+                v.triggers[pullResult[1]].callback(v.instance, pullResult, 2)
+            end
+            return
+        end
         for k,v in pairs(eventHandlers) do
             if v.reference == pullResult[2] then
                 if v.callback then
@@ -307,6 +327,7 @@ scriptInfo = {
 function rmessage(message)
     if scriptInfo.network then
         scriptInfo.network:broadcast(101, "msg", message, scriptInfo.name)
+        print(message)
     else
         error("No network")
     end
@@ -348,3 +369,39 @@ function explode(div,str) -- credit: http://richard.warburton.it
     table.insert(arr,string.sub(str,pos)) -- Attach chars right of last divider
     return arr
 end
+
+
+local srep = string.rep
+
+-- all of these functions return their result and a boolean
+-- to notify the caller if the string was even changed
+
+-- pad the left side
+
+lpad =
+function (s, l, c)
+    local res = srep(c or ' ', l - #s) .. s
+
+    return res, res ~= s
+end
+
+-- pad the right side
+rpad =
+function (s, l, c)
+    local res = s .. srep(c or ' ', l - #s)
+
+    return res, res ~= s
+end
+
+-- pad on both sides (centering with left justification)
+pad =
+function (s, l, c)
+    c = c or ' '
+
+    local res1, stat1 = rpad(s,    (l / 2) + #s, c) -- pad to half-length + the length of s
+    local res2, stat2 = lpad(res1,  l,           c) -- right-pad our left-padded string to the full length
+
+    return res2, stat1 or stat2
+end
+
+return _M

@@ -44,7 +44,7 @@ end, { -- table of message handlers
             text = message,
             type = "error",
             source = parameters[po + 1],
-            time = computer.millis()
+            time = computer.time()
         })
         print ("Network error: " .. message)
     end,msg = function(address, parameters, po) -- subhandler for message postOrder
@@ -57,7 +57,7 @@ end, { -- table of message handlers
             text = message,
             type = "msg",
             source = parameters[po + 1],
-            time = computer.millis()
+            time = computer.time()
         })
         print ("Network Message: " .. message)
     end,warning = function(address, parameters, po) -- subhandler for message postOrder
@@ -70,7 +70,7 @@ end, { -- table of message handlers
             text = message,
             type = "warning",
             source = parameters[po + 1],
-            time = computer.millis()
+            time = computer.time()
         })
         print ("Network Alert: " .. message)
     end,debug = function(address, parameters, po) -- subhandler for message postOrder
@@ -83,13 +83,29 @@ end, { -- table of message handlers
             text = message,
             type = "debug",
             source = parameters[po + 1],
-            time = computer.millis()
+            time = computer.time()
         })
         print ("Network Alert: " .. message)
     end
 })
 
 screens.init("Logging", 1, 1, 100, 25)
+
+function getTimeString(time)
+    --print(time)
+    if not time then
+        time = computer.time()
+    end
+    local day = math.floor(time / 86400)
+    time = time % 86400
+    local hour = math.floor(time / 3600)
+    time = time % 3600
+    local minute = math.floor(time / 60)
+    time = time % 60
+    local second = math.floor(time)
+    return string.format("%2d;%02d:%02d:%02.s", day, hour, minute, second)
+end
+
 
 function printScreen()
     local item = logg.first
@@ -100,6 +116,9 @@ function printScreen()
     screens:print(x, y, "Global Event logg: "); y = y + 1
     while item do
         x = 2
+        screens:setForeground(0.3, 0.3, 0.7, 1)
+        screens:print(x, y, getTimeString(item.value.time))
+        x = x + 13
         if item.value.source then
             screens:setForeground(0.3,0.3,0.3,1)
             screens:print(x, y, item.value.source .. ": ");

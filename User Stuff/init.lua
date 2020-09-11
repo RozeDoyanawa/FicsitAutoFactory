@@ -17,7 +17,20 @@ for _,f in pairs(filesystem.childs("/dev")) do
 end
 filesystem.mount("/dev/" .. drive, "/")
 
+
+
 filesystem.doFile("/Common.lua")
+
+
+registerEvent("FileSystemUpdate", nil, function(pullRequest)
+    if pullRequest[4] and pullRequest[4] == "/Common.lua" then
+        rdebug("Computer reset by filesystem")
+        print("Meow")
+        computer.skip()
+        computer.reset()
+    end
+end)
+
 filesystem.doFile("/Screen.lua")
 filesystem.doFile("/padding.lua")
 filesystem.doFile("/UserStuff.lua")

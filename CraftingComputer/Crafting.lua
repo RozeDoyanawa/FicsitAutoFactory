@@ -9,6 +9,7 @@
 local dev = component.proxy(component.findComponent("Crafting Computer Network Adapter")[1])
 scriptInfo.name = "Crafting T1"
 scriptInfo.network = dev
+scriptInfo.debugging = true
 
 stationPrefix = "Crafter"
 
@@ -21,7 +22,7 @@ end
 
 stationOutputSlot = 2
 
-screens.init("Crafting", 1, 1, 100, 45)
+screens.init("Crafting", 1, 1, math.floor(100 * 1.5), math.floor(45 * 1.5))
 
 local panel = component.proxy(component.findComponent("Crafting Panel 1")[1])
 
@@ -30,3 +31,4 @@ registerEvent(button, button, function(self, evt)
     queue2("Iron Plate", 2)
 end)
 event.listen(button)
+

@@ -45,7 +45,7 @@ local autoCraftButton = panel:getModule(10, 0)
 local craftRequested = panel:getModule(0, 3)
 local craftPassingby = panel:getModule(0, 5)
 
-screens.init("Smelting", 1, 1, 115, 45)
+screens.init("Smelting", 1, 1, math.floor(115 * 1.25),math.floor(45 * 1.25))
 
 
 craftAmountDisplay:setSize(100)
@@ -82,7 +82,8 @@ busses['A'] = {
         ["Coal"] = component.proxy(component.findComponent("CoalOutA")[1]),
         ["Bauxite"] = component.proxy(component.findComponent("BauxiteOutA")[1])
     },
-    queue = createLinkedList()
+    queue = createLinkedList(),
+    children = {}
 }
 busses['B'] = {
     name = "B",
@@ -98,8 +99,20 @@ busses['B'] = {
 
         }
     },
-    queue = createLinkedList()
+    queue = createLinkedList(),
+    children = {}
 }
+
+local sortedBusses = {
+    busses.A,
+    busses.B
+}
+
+table.sort(sortedBusses, function(a, b)
+    return a.name < b.name
+end)
+
+
 local smelters = {
     {
         reference = component.proxy(component.findComponent("Smelter1")[1]),
@@ -193,6 +206,10 @@ for i,s in pairs(smelters) do
         s.queue[b.name] = createLinkedList()
     end
     s.total = 0
+    s.name = s.reference.nick
+    s.inputs = {}
+    s.remaining = 0
+    s.workObject = ""
     local connector = s.reference:getFactoryConnectors()[s.outputConnector]
     registerEvent(connector, s, function(self, param)
         processSmelterOutput(self)
@@ -352,6 +369,8 @@ outputSplitters = {
     }
 }
 
+busses.B.paired = {busses.A}
+
 for i,v in pairs(busses) do
     for i2,v2 in pairs(v.sourceSplitters) do
         registerEvent(v2, v, function(self)
@@ -365,6 +384,9 @@ for i,v in pairs(outputSplitters) do
     registerEvent(v.reference, v, function(self)
         processOutputEvent(self)
     end)
+    v.name = v.reference.nick
+    table.insert(v.bus.children, v)
+    table.insert(v.manufacturer.inputs, v)
     --event.listen(v.reference)
     --print("Listening for events on output splitter " .. tostring(i))
 end
@@ -439,6 +461,7 @@ function queue(smelter, recipeName, count)
                 end
             end
             smelter.reference:setRecipe(recipe)
+            smelter.workObject = recipe:getProducts()[1].item:getName()
             local resultCount = recipe:getProducts()[1].count
             local _count = math.ceil(count / resultCount)
             if not doPurge then
@@ -668,24 +691,286 @@ function processOutputEvent(splitter, param)
     end
 end
 
+
+
+local printQueue = true
+
+--queue2("Iron Plate", 2)
+
+local stationWidth = 25
+
+function paintStation(station, x, y)
+    local lx = x
+    --
+    local mx = 0
+    local width = stationWidth
+    local height = 5
+    local c = 0
+    for _,input in pairs(station.inputs) do
+        --print(input.name .. " :before " .. tostring(input.paintX))
+        input = input.bus
+        if input.paintX > mx then
+            mx = input.paintX
+        end
+        computer.skip()
+    end
+    --print(station.reference.nick .. " mx " .. tostring(mx) )
+
+    local cy = y + 2
+    local cx = mx
+    screens:setForeground(0.7,0.3,0.7,1)
+    if station.remaining > 0 then
+        screens:setForeground(0.7,0.7,0.3,1)
+    elseif station.error then
+        screens:setForeground(1,0.3,0.3,1)
+    else
+        screens:setForeground(0.7,1,0.7,1)
+    end
+    screens:dprint(0, mx + 0, cy, station.name)
+    cy = cy + 1
+
+    if station.remaining > 0 then
+        screens:setForeground(0.1,0.7,0.1,1)
+        screens:dprint(0, mx + 0, cy, "←")
+        screens:setForeground(0.7,0.7,0.7,1)
+        screens:dprint(0, mx + 2, cy, station.workObject)
+        screens:setForeground(0.3,0.3,1,1)
+        screens:dprint(0, mx + width - 2 - 5, cy, string.format("%3d", station.remaining))
+        cy = cy + 1
+    end
+    if printQueue then
+        local f = station.queue.first
+        while f do
+            screens:setForeground(0.7,0.7,0.2,1)
+            screens:dprint(0, mx + 2, cy, "→")
+            screens:setForeground(0.7,0.7,0.7,1)
+            screens:dprint(0, mx + 4, cy, f.value.name)
+            screens:setForeground(0.3,0.3,1,1)
+            screens:dprint(0, mx + width - 2 - 5, cy, string.format("%3d", f.value.count))
+            cy = cy + 1
+            f = f.next
+            computer.skip()
+        end
+    end
+
+    c = 0
+
+    screens:setForeground(0.7,0.7,0.5,1)
+    screens:dprint(0, mx - 1, y + 1, "┌")
+    screens:dfill(0, mx, y + 1, width - 2, 1, "─")
+    screens:dfill(0, mx, y + 1 + height, width - 2, 1, "─")
+    c = 0
+    for _,input in pairs(station.inputs) do
+        input = input.bus
+        screens:setForeground(0.3,0.3,0.3,1)
+        screens:dfill(0, input.paintX, input.paintY, mx - input.paintX + width, 1, "═")
+        screens:dprint(0, mx + c, input.paintY, "╦")
+        screens:dfill(0, mx + c, input.paintY + 1, 1, y - input.paintY - 1, "║")
+        computer.skip()
+        screens:setForeground(0.7,0.7,0.5,1)
+        screens:dprint(0, mx + c, y + 1, "╨")
+        c = c + 2
+    end
+    screens:dprint(0, mx + width - 2, y + 1, "┐")
+    screens:dprint(0, mx - 1, y + 1 + height, "└")
+    screens:dprint(0, mx + width - 2, y + 1 + height, "┘")
+    screens:dfill(0, mx - 1, y + 2, 1, height - 1, "│")
+    screens:dfill(0, mx + width - 2, y + 2, 1, height - 1, "│")
+    screens:setForeground(0.3,0.3,0.3,1)
+
+
+    x = mx + width
+    for _,input in pairs(station.inputs) do
+        input = input.bus
+        input.paintX = x
+        computer.skip()
+        --print(input.name .. ":after " .. tostring(input.paintX))
+    end
+    return x - lx, y + height
+end
+
+function printSnake(bus, lowX, fromY, toY, sub, maxsnake)
+    local __y = toY
+    screens:dfill(0, bus.paintX - 1, bus.paintY, sub + 1, 1, "═")
+    screens:dprint(0, bus.paintX + sub, bus.paintY, "╗")
+    screens:dfill(0, bus.paintX + sub, bus.paintY + 1, 1, toY - bus.paintY - 3 + sub, "║")
+    screens:dprint(0, bus.paintX + sub, __y - 2 + sub, "╝")
+    screens:dfill(0, lowX + 2 + sub, __y - 2 + sub, bus.paintX + sub - (lowX + 2 + sub), 1, "═")
+    screens:dprint(0, lowX + 2 + sub, __y - 2 + sub, "╔")
+    local lowY = __y - sub + maxsnake
+    screens:dfill(0, lowX + 2 + sub, __y - 1 + sub, 1, (lowY - (__y - 1 + sub)), "║")
+    screens:dprint(0, lowX + 2 + sub, lowY, "╚")
+    fromY = __y + maxsnake - sub
+    bus.paintY = fromY
+    bus.paintX = lowX + 3 + sub
+    computer.skip()
+    return lowX, fromY
+end
+
+function printBus2(bus, x, y)
+    screens:setForeground(0.7,0.7,0.7,1)
+    screens:dprint(0, x, 0, bus.name)
+    --screens:dprint(0, x, 1, bus.name)
+    screens:setForeground(0.3,0.3,0.3,1)
+    y = y + 1
+    bus.paintX = x
+    local _y = y + 1
+    local c = 0
+    local t = 0
+    for _,child in pairs(sortedBusses) do
+        if child == bus then
+            t = c
+        end
+        c = c + 1
+    end
+    --t = c - t
+    print("Y=" .. tostring(y) .. ", t=" ..tostring(t) .. ", c=" ..tostring(c))
+    for qy=y,y + 1 + t,1 do
+        screens:dprint(0, x, qy, "║")
+    end
+    screens:dprint(0, x, y + t * 2 + 1, "╚")
+    y = y + 1 + t * 2
+    for qx=x + 1,2 + (c) * 2 + 1,1 do
+        screens:dprint(0, qx, y, "═")
+    end
+    _y = y
+    local n = false
+    local bx = x + c * 2
+    local cindex = 0
+    local drawWidth = screens.cellWidth - stationWidth - 50
+    local maxY = _y
+    local maxX = 0
+    bus.paintX = bx
+    bus.paintY = _y
+    bus.painted = true
+    screens:setForeground(0.7,0.7,0.3,1)
+    screens:dprint(0, bus.paintX - 3, bus.paintY - 1, bus.name)
+    if bus.queue.length > 0 then
+        screens:setForeground(0.3,0.3,0.7,1)
+        screens:dprint(0, bus.paintX - 3 + string.len(bus.name) + 2, bus.paintY - 1, string.format("%5d", bus.queue.length))
+        screens:setForeground(0.7,0.7,0.3,1)
+        screens:dprint(0, bus.paintX - 3 + string.len(bus.name) + 2 + 5, bus.paintY - 1, " items")
+    else
+        screens:setForeground(0.3,0.3,0.3,1)
+        screens:dprint(0, bus.paintX - 3 + string.len(bus.name) + 2, bus.paintY - 1, "Nothing needed")
+    end
+
+    screens:setForeground(0.3,0.3,0.3,1)
+    local qx = 0; local qy = 0
+    for _,q in pairs(smelters) do
+        computer.skip()
+        if bus.paintX > drawWidth then
+            x, _y = printSnake(bus, bx, _y, maxY + 5, cindex, 2)
+            if bus.paired then
+                local mod = 1
+                for _,p in pairs(bus.paired) do
+                    printSnake(p, bx, _y, maxY + 5, cindex + mod, 2)
+                    mod = mod + 1
+                end
+            end
+        end
+        if q.inputs then
+            local depPainted = true
+            local paint = false
+            for _,qlbus in pairs(q.inputs) do
+                local lbus = qlbus.bus
+                --print(lbus.name)
+                if bus.name == lbus.name then
+                    paint = true
+                end
+                if not lbus.painted then
+                    depPainted = false
+                    break
+                end
+            end
+            if depPainted and paint then
+                --print("Meow")
+                qx, qy = paintStation(q, x + 5, _y)
+                --lbus.parent.paintX = x + qx
+            elseif not depPainted then
+                --print("No deps for "..q.reference.nick)
+            else
+                --print("No paint for "..q.reference.nick)
+            end
+        end
+        x = x + qx
+        if maxY < qy then
+            maxY = qy
+        end
+        computer.skip()
+    end
+    _y = maxY + 1
+    cindex = cindex + 1
+    return _y
+end
+
 function printScreen()
+    screens:clear()
+    local x = 2
+    local y = 5
+    for _,bus in pairs(sortedBusses) do
+        bus.painted = false
+    end
+    for _,bus in pairs(sortedBusses) do
+        local y = 0
+        if not bus.parent then
+            y = printBus2(bus, x, y)
+            x = x + 2
+        end
+    end
+    screens:setForeground(0.3,0.3,0.3,1)
+    for _y = 0,screens.cellHeight,1 do
+        screens:dprint(0,  screens.cellWidth - 50, _y, "┃")
+    end
+    screens:setForeground(0.7,0.7,0.7,1)
+    x = screens.cellWidth - 49
+    screens:dprint(0, x,0,"Future");
+    y = 1
+    local item = craftingQueue.first
+    if item then
+        local m = 0
+        while item do
+            m = m + 1
+            screens:setForeground(0.7,0.7,0.7,1)
+            screens:dprint(0,  x+ 2, y, item.value.name)
+            screens:setForeground(0.3,0.3,1,1)
+            screens:dprint(0, x + 23, y, string.format("%3d", item.value.count))
+            item = item.next
+            y = y + 1
+            if y + 2 > screens.cellHeight then
+                screens:setForeground(0.7,0.7,0.7,1)
+                screens:dprint(0, x,y, " + " .. tostring(craftingQueue.length - m) .. " more")
+                break
+            end
+        end
+    else
+        screens:setForeground(1,1,0.6,1)
+        screens:dprint(0,  x+ 2, y, "Nothing to do")
+        y = y + 1
+    end
+
+    screens:flush()
+end
+
+
+function printScreen2()
     screens:clear()
     local y = 0
     local x = 0
     local c = 30
     screens:setForeground(1,1,1,0.8)
-    screens:print(0,y,"Queue"); x,y = gColumnAdvance(x,y,c)
+    screens:dprint(0, 0,y,"Queue"); x,y = gColumnAdvance(x,y,c)
     local item = craftingQueue.first
     if not item then
-        screens:print(3,y,"Nothing to do"); x,y = gColumnAdvance(x,y,c)
+        screens:dprint(0, 3,y,"Nothing to do"); x,y = gColumnAdvance(x,y,c)
     else
         local i = 0
         while item do
             local v = item.value
             i = i + 1
-            screens:print(3, y, v.recipeName)
+            screens:dprint(0, 3, y, v.recipeName)
             screens:setForeground(0.3,0.3,1,0.8)
-            screens:print(20,y,tostring(v.count)); x,y = gColumnAdvance(x,y,c)
+            screens:dprint(0, 20,y,tostring(v.count)); x,y = gColumnAdvance(x,y,c)
             screens:setForeground(1,1,1,0.8)
             if y >= 17 then
                 break
@@ -693,48 +978,48 @@ function printScreen()
             item = item.next
         end
         if i < craftingQueue.length then
-            screens:print(3,y,tostring(craftingQueue.length - i) .. " additional items"); x,y = gColumnAdvance(x,y,c)
+            screens:dprint(0, 3,y,tostring(craftingQueue.length - i) .. " additional items"); x,y = gColumnAdvance(x,y,c)
         end
     end
     y = 0
     screens:setForeground(1,1,1,0.8)
-    screens:print(30,y,"Smelters"); x,y = gColumnAdvance(x,y,c)
+    screens:dprint(0, 30,y,"Smelters"); x,y = gColumnAdvance(x,y,c)
     local i = 1
     local x = 32
     local yStart = y
     for k,v in pairs(smelters) do
         screens:setForeground(1,1,1,0.8)
-        screens:print(x,y, v.reference.nick .. " (#" .. tostring(i) .. ")"); x,y = gColumnAdvance(x,y,c)
+        screens:dprint(0, x,y, v.reference.nick .. " (#" .. tostring(i) .. ")"); x,y = gColumnAdvance(x,y,c)
         screens:setForeground(1,1,1,0.8)
         if v.remaining > 0 then
             screens:setForeground(0,1,0,0.8)
-            screens:print(x + 2, y, "Working");
+            screens:dprint(0, x + 2, y, "Working");
             screens:setForeground(1,1,1,0.8)
-            screens:print(x + 10, y, "Q'd:");
+            screens:dprint(0, x + 10, y, "Q'd:");
             screens:setForeground(0.3,0.3,1,0.8)
-            screens:print(x + 14, y, string.format("%3d", v.remaining));
-            screens:print(x + 17, y, "#");
+            screens:dprint(0, x + 14, y, string.format("%3d", v.remaining));
+            screens:dprint(0, x + 17, y, "#");
             screens:setForeground(0.3,0.3,1,0.8)
-            screens:print(x + 18, y, string.format("%4d", v.total));
+            screens:dprint(0, x + 18, y, string.format("%4d", v.total));
             x,y = gColumnAdvance(x,y,c)
             for _,bus in pairs(v.queue) do
                 local q = bus.first
                 while q do
                     screens:setForeground(1,1,1,0.8)
-                    screens:print(x + 4, y, q.value.name .. "  " .. string.format("%3d", q.value.delivercount) .. "/" .. string.format("%3d", q.value.receivecount));
+                    screens:dprint(0, x + 4, y, q.value.name .. "  " .. string.format("%3d", q.value.delivercount) .. "/" .. string.format("%3d", q.value.receivecount));
                     q = q.next
                     x,y = gColumnAdvance(x,y,c)
                 end
             end
         else
             screens:setForeground(0.5,0.5,0.5,0.8)
-            screens:print(x + 2, y, "Idle");x,y = gColumnAdvance(x,y,c)
+            screens:dprint(0, x + 2, y, "Idle");x,y = gColumnAdvance(x,y,c)
         end
         screens:setForeground(1,1,1,0.8)
     end
     if doPurge then
         screens:setForeground(1,0,0,1)
-        screens:print(0, 41, "Purging is active!");y = y+1
+        screens:dprint(0, 0, 41, "Purging is active!");y = y+1
     end
     screens:flush()
 end

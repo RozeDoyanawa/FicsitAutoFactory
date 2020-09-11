@@ -18,7 +18,8 @@ busses = {
             rmessage("Send for " .. tostring(count) .. " " .. item .. " from A")
             scriptInfo.network:send(itemManagerAddress, 100, "order", item, count, self.name, purpouse)
         end,
-        enabled = true
+        enabled = true,
+        children = {}
     },
     B = {
         name = "B",
@@ -26,9 +27,19 @@ busses = {
             rmessage("Send for " .. tostring(count) .. " " .. item .. " from B")
             scriptInfo.network:send(itemManagerAddress, 100, "order", item, count, self.name, purpouse)
         end,
-        enabled = true
+        enabled = true,
+        children = {}
     },
 }
+
+sortedBusses = {
+    busses.A,
+    busses.B
+}
+
+table.sort(sortedBusses, function(a, b)
+    return a.name < b.name
+end)
 
 function processOutputs()
     if lastProcessedSplitter == nil then
@@ -98,6 +109,7 @@ function getBus(name, configuration)
         local bus = {
             name = name,
             parent = nil,
+            isBus = true,
             queue = createLinkedList(),
             splitter = nil,
             localOutput = configuration.localOutput,
@@ -138,6 +150,10 @@ function getBus(name, configuration)
                         local parent = getBus(_space[2])
                         if parent then
                             bus.parent = parent
+                            if not bus.parent.children then
+                                bus.parent.children = {}
+                            end
+                            table.insert(bus.parent.children, bus)
                         else
                             rerror("No parent found ".. _space[2])
                         end
