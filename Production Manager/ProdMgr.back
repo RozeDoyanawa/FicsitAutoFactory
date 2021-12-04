@@ -1,0 +1,1855 @@
+local periodicStuff = createLinkedList()
+
+local allRecipes = {}
+local sortedRecipes = {}
+
+local makerList = {}
+
+local knownCraftSystems = {
+    "A5C7ED0D479C8AE8CD0F65BE244D2203" -- CraftUnit_Smelting1
+}
+
+local freeTaskIDs = createLinkedList()
+
+local highTaskID = 1
+
+local FactoryStatuses = {
+    UNKNOWN = 0, IDLE = 1, WORKING = 2
+}
+
+local TaskStatuses = {
+    UNKNOWN = 0, NEED = 1, SCHEDULE = 2, PROCESSING = 3
+}
+
+local tasks = createLinkedList()
+
+local taskMap = {
+
+}
+
+local alternativeRecipes = {
+    ""
+}
+
+local fluidTypes = getFluidTypes()
+
+local stockPileCache = {}
+
+local enableIdleCrafting = false
+
+
+local fluids = {
+    ["Heavy Oil Residue"] = {
+        name = "Heavy Oil Residue",
+        packaged = "Packaged Heavy Oil Residue",
+        unpack = "Unpackage Heavy Oil Residue",
+        pack = "Packaged Heavy Oil Residue"
+    },
+    ["Water"] = {
+        name = "Water",
+        packaged = "Packaged Water",
+        unpack = "Unpackage Water",
+        pack = "Packaged Water"
+    },
+    ["Crude Oil"] = {
+        name = "Crude Oil",
+        packaged = "Packaged Oil",
+        unpack = "Unpackage Oil",
+        pack = "Packaged Oil"
+    },
+    ["Fuel"] = {
+        name = "Fuel",
+        packaged = "Packaged Fuel",
+        unpack = "Unpackage Fuel",
+        pack = "Packaged Fuel"
+    },
+    ["Liquid Biofuel"] = {
+        packaged = "Packaged Liquid Biofuel",
+        name = "Liquid Biofuel",
+        unpack = "Unpackage Liquid Biofuel",
+        pack = "Packaged Liquid Biofuel"
+    },
+}
+
+
+function createMaker(craftUnit, recipes, index, status)
+    local numIndex = index
+    local loc = string.find(numIndex, ":")
+    if loc then
+        numIndex = string.sub(numIndex, loc + 1)
+    end
+    local maker = {
+        craftUnit = craftUnit,
+        recipes = recipes,
+        index = index,
+        numIndex = numIndex,
+        status = FactoryStatuses.UNKNOWN,
+
+        make = function(recipeName, amount, taskID)
+        end
+    }
+    return maker
+end
+
+function sucessfullReservation(taskID, resource, reserved)
+    local taskItem = taskMap[taskID]
+    local task = taskItem.value
+    for _,d in pairs(task.dependencies) do
+        if d.name == resource then
+            d.count = d.count - (reserved)
+            if d.count <= 0 then
+                d.satisfied = true
+                taskParentValue.needs = taskParentValue.needs - 1
+                if taskParentValue.needs == 0 then
+                    taskParentValue.status = TaskStatuses.SCHEDULE
+                end
+                rdebug("Task " .. taskID .. " got " .. resource .. " satisfied by reservation, needs " .. task.needs .. " more dependencies fulfilled")
+            else
+                rdebug("Task " .. taskID .. " got " .. reserved .. " of " .. resource .. " satisfied by reservation, remaining before fulfilled: " .. d.count)
+            end
+            return
+        end
+    end
+end
+
+function finishedTask(taskID)
+    local task = taskMap[taskID]
+    if task then
+        local taskValue = task.value
+        taskValue.maker.status = FactoryStatuses.IDLE
+        print("Maker " .. taskValue.maker.craftUnit.name .. "[" .. taskValue.maker.index .. "] finished")
+        rmessage("Task " .. taskID .. " finished")
+        if taskValue.parent then
+            local taskParent = taskValue.parent
+            local taskParentValue = taskParent.value
+            --printArrayToFile("/lastTask.txt", taskValue, 3)
+            --print("Finishing parent " .. taskParentValue.taskID)
+            for _,d in pairs(taskParentValue.dependencies) do
+                if d.name == taskValue.target then
+                    local made = taskValue.count * taskValue.recipe.recipeMakesAmount
+                    d.count = d.count - (made)
+                    for k,v in pairs(d.subtasks) do
+                        if v == taskValue.taskID then
+                            table.remove(d.subtasks, k)
+                            break
+                        end
+                    end
+                    --d.taskID = nil
+                    if d.count <= 0 then
+                        d.satisfied = true
+                        taskParentValue.needs = taskParentValue.needs - 1
+                        if taskParentValue.needs == 0 then
+                            taskParentValue.status = TaskStatuses.SCHEDULE
+                        end
+                        rdebug("Task " .. taskParentValue.taskID .. " got " .. taskValue.target .. " satisfied, needs " .. taskParentValue.needs .. " more dependencies fulfilled")
+                    else
+                        rdebug("Task " .. taskParentValue.taskID .. " got " .. made .. " of " .. taskValue.target .. " satisfied, remaining before fulfilled: " .. d.count)
+                    end
+                    break
+                end
+            end
+        elseif taskValue.callback ~= nil then
+            taskValue:callback()
+        elseif task.callback ~= nil then
+            task:callback()
+        end
+        taskMap[taskID] = nil
+        task:delete()
+        freeTaskID(taskValue.taskID)
+    else
+        rerror("Task '" .. tostring(taskID) .. "' not found")
+    end
+end
+
+function finishedDependency(taskID, resource)
+    local task = taskMap[taskID]
+    if task ~= nil then
+        for _,d in pairs(task.value.dependencies) do
+            if d.name == resource then
+                for k,v in pairs(d.subtasks) do
+                    if v == taskID then
+                        d.subtasks[k] = nil
+                        break
+                    end
+                end
+                --d.taskID = nil
+                d.satisfied = true
+                task.value.needs = task.value.needs - 1
+                if task.value.needs == 0 then
+                    task.value.status = TaskStatuses.SCHEDULE
+                end
+                --tasks:print(1)
+                rdebug("Task " .. taskID .. " got " .. d.name .. " satisfied, needs " .. task.value.needs .. " more dependencies fulfilled")
+                return
+            end
+        end
+        rerror("Task dependency for " .. taskID .. " finished, but dependency not found: " .. resource)
+    else
+        rerror("Task '" .. tostring(taskID) .. "' not found")
+    end
+end
+
+function makeRegentItem()
+    local solid = {
+
+    }
+end
+
+function makeRegentItem()
+
+end
+
+function getTaskID()
+    local taskID
+    if freeTaskIDs.first then
+        taskID = freeTaskIDs.first.value
+        freeTaskIDs.first:delete()
+    else
+        taskID = highTaskID
+        highTaskID = highTaskID + 1
+    end
+    return taskID
+end
+
+function freeTaskID(taskID)
+    freeTaskIDs:push(taskID)
+end
+
+
+function scheduler()
+    local schedulerTaskItem = tasks.first
+    while schedulerTaskItem ~= nil do
+        local task = schedulerTaskItem.value
+        if task.needs == 0 and task.status == TaskStatuses.SCHEDULE then
+            if task.type == "craft" then
+                for _,maker in pairs(task.recipe.makers) do
+                    if maker.status == FactoryStatuses.IDLE then
+                        maker.status = FactoryStatuses.WORKING
+                        task.maker = maker
+                        maker.taskID = task.taskID
+                        task.status = TaskStatuses.PROCESSING
+                        rmessage("Sending " .. task.taskID .. " for production in " .. maker.craftUnit.name)
+                        scriptInfo.network:send(maker.craftUnit.address, 105, "submitMakeOrder", "json", json.encode({
+                            index = maker.index,
+                            recipeName = task.recipe.recipeName,
+                            count = task.count,
+                            taskID = task.taskID,
+                            target = task.target
+                        }))
+                        break
+                    else
+                        if task.reportStatus ~= task.status then
+                            print("Task " .. task.taskID .. " is not ready for scheduling. Needs=" .. task.needs .. ", status="..task.status)
+                            task.reportStatus = task.status
+                        end
+                    end
+                end
+                return true
+            elseif task.type == "request" then
+                local item = {
+                    name = task.target,
+                    count = task.count,
+                    bus = task.bus,
+                    taskID = task.taskID
+                }
+                rdebug("Request task got fulfilled, sending order to inventory")
+                scriptInfo.network:send(scriptInfo.addresses.BusMgr, 100, "order", "json", json.encode(item))
+                freeTaskID(task.taskID)
+                schedulerTaskItem:delete()
+                return true
+            end
+        else
+            if task.reportStatus ~= task.status then
+                print("Task " .. task.taskID .. " is not ready for scheduling. Needs=" .. task.needs .. ", status="..task.status)
+                task.reportStatus = task.status
+            end
+        end
+        computer.skip()
+        schedulerTaskItem = schedulerTaskItem.next
+    end
+end
+
+function enumDependencies(dependencyList, recipe, multiplier)
+    local regents = {}
+    local regentIndex = 1
+    local c = m
+    for _,v in pairs(recipe.regents) do
+        local name = v.name
+        if fluidTypes[name] ~= nil then
+            local i = 0
+            while (math.floor(v.count)  * multiplier) % fluidTypes[name].unpackCount > 0 do
+                multiplier = multiplier + 1
+                i = i + 1
+                if i >= 10 then
+                    print(math.floor(v.count), multiplier)
+                    error("Impossible equation")
+                end
+            end
+            break
+        end
+    end
+
+    for _,v in pairs(recipe.regents) do
+        local name = v.name
+        local cc
+        if fluidTypes[name] ~= nil then
+            --printArray(fluidTypes[name])
+            name = fluidTypes[name].packaged
+            rdebug("Fluid name changed to '" .. name .. "'")
+            --printArray(fluidTypes[name])
+            if fluidTypes[name] == nil then
+                printArrayToFile("fluidTypes.txt", fluidTypes);
+            end
+            cc = (v.count) * multiplier
+            cc = roundUp(cc, fluidTypes[name].unpackCount)
+            rdebug("Fluid dependency: " .. name .. " " ..cc .. "x")
+        else
+            cc = v.count * multiplier
+        end
+        regents[regentIndex] = makeRegentItem(name, cc)
+        if allRecipes[v.name] ~= nil then
+            --enumDependencies(dependencyList, allRecipes[v.name], multiplier * cc)
+        end
+        regentIndex = regentIndex + 1
+        table.insert(dependencyList, {
+            name = name,
+            count = cc,
+            recipe = v,
+            satisfied = false,
+            subtasks = {}
+        })
+    end
+    return multiplier
+end
+
+function scheduleRecipe(recipeName, recipeObj, count, target, taskID, callback)
+    print("Found recipe: " .. recipeName)
+    local upcount = 0
+    if fluidTypes[recipeObj.recipeMakes] ~= nil then
+        upcount = 1
+        rdebug("Upcount")
+    end
+    local taskCount = 0
+    local task = nil
+    local needs = math.ceil(count / recipeObj.recipeMakesAmount + upcount)
+    while needs > 0 do
+        local dependencies = {}
+        local toMake = math.min(needs, recipeObj.maxOrder)
+        toMake = enumDependencies(dependencies, recipeObj, toMake)
+        if recipeObj.needsCanisters ~= nil and recipeObj.needsCanisters > 0 then
+            local fluid = nil
+            if fluidTypes[recipeObj.recipeMakes] ~= nil then
+                fluid = fluidTypes[recipeObj.recipeMakes]
+            elseif recipeObj.sideProduct ~= nil then
+                if fluidTypes[recipeObj.sideProduct] ~= nil then
+                    fluid = fluidTypes[recipeObj.sideProduct]
+                else
+                    error("Side product not fluid : " .. recipeObj.sideProduct)
+                end
+            else
+                error("No fluid to make but has canisters")
+            end
+            local dep = {
+                name = "Empty Canister",
+                count = roundDown(recipeObj.needsCanisters * (toMake - upcount),  fluid.unpackCount),
+                recipe = allRecipes["Empty Canister"],
+                satisfied = false,
+                subtasks = {}
+            }
+            if dep.count > 0 then
+                table.insert(dependencies, dep)
+                print("Resetve empty canisters for " .. recipeName)
+            end
+        end
+        if recipeObj.maxOrder < 1 or toMake < 1 then
+            error("Max order for " .. recipeName .. " is " .. recipeObj.maxOrder)
+        end
+        task = {
+            dependencies = dependencies,
+            type = "craft",
+            recipe = recipeObj,
+            target = target,
+            reportStatus = 0,
+            count = toMake,
+            rawCount = count,
+            rawNeeds = needs,
+            taskID = getTaskID(),
+            status = TaskStatuses.NEED,
+            callback = callback
+        }
+        needs = needs - toMake
+        if taskID ~= nil then
+            if taskMap[taskID] then
+                task.parent = taskMap[taskID]
+                --print(task.parent);
+                local depSet = false
+                for k,v in pairs(task.parent.value.dependencies) do
+                    if v.name == task.target then
+                        v.subtasks[#v.subtasks] = task.taskID
+                        --v.taskID = task.taskID
+                        depSet = true
+                    end
+                    computer.skip()
+                end
+                if not depSet then
+                    rerror("Dependency for " .. task.target .. " not found in dependency list of task " .. tostring(task.parent))
+                    printArrayToFile("DepNotFoundError.txt", task.parent.value.dependencies, 1)
+                end
+            else
+                rerror("Task '" .. tostring(taskID) .. "' not found")
+            end
+        end
+        local taskItem = tasks:push(task)
+        taskMap[task.taskID] = taskItem
+        task.needs = #dependencies
+        for _,d in pairs(dependencies) do
+            scriptInfo.network:send(scriptInfo.addresses.BusMgr, 100, "reserve", "json", json.encode{
+                name = d.name,
+                count = d.count,
+                taskID = task.taskID
+            })
+            computer.skip()
+        end
+        taskCount = taskCount + 1
+        wait(1000)
+    end
+    rmessage("Order for " .. count .. " " .. target .. " submitted. Created ".. taskCount .. " new task(s)")
+    return task
+end
+
+function submitWork(target, count, taskID, callback)
+    print( "submitWork(" .. target .. ", " .. tostring(count) .. ", " .. tostring(taskID))
+    if fluidTypes[target] then
+        --target = fluidTypes[target].name
+    end
+    local recipeName = target
+    if alternativeRecipes[target] ~= nil then
+        recipeName = alternativeRecipes[target]
+    end
+    -- Look for primary recipe output
+    for _,v in pairs(allRecipes) do
+        if v.recipeName == recipeName then
+            return scheduleRecipe(recipeName, v, count, target, taskID, callback)
+        end
+    end
+    for _,v in pairs(allRecipes) do
+        if v.recipeName == "Roze " .. recipeName then
+            return scheduleRecipe(recipeName, v, count, target, taskID, callback)
+        end
+    end
+
+    -- No exact match, look for primary and secondary output matches
+    --for _,v in pairs(allRecipes) do
+    --    if v.recipeMakes == target  then
+    --        rdebug("Craft by side recipe : " .. v.recipeName)
+    --        scheduleRecipe(v.recipeName, v, count, target, taskID, callback)
+    --    end
+    --end
+    rerror("No recipe to craft " .. target)
+end
+
+function submitOrder(itemName, count, bus)
+    print( "submitOrder(" .. itemName .. ", " .. tostring(count) .. ", " .. tostring(taskID) .. ", " .. bus)
+    local needs = count
+    local taskCount = 0
+    while needs > 0 do
+        local toMake = math.min(needs, stackSize[itemName])
+        local dependencies = { {
+                                   name = itemName,
+                                   count = count,
+                                   satisfied = false,
+                                   subtasks = {}
+                               }}
+        local task = {
+            dependencies = dependencies,
+            type = "request",
+            target = itemName,
+            bus = bus,
+            reportStatus = 0,
+            count = toMake,
+            rawCount = count,
+            rawNeeds = needs,
+            taskID = getTaskID(),
+            status = TaskStatuses.NEED,
+        }
+        needs = needs - toMake
+        task.needs = #dependencies
+        local taskItem = tasks:push(task)
+        taskMap[task.taskID] = taskItem
+        for _,d in pairs(dependencies) do
+            scriptInfo.network:send(scriptInfo.addresses.BusMgr, 100, "reserve", "json", json.encode{
+                name = d.name,
+                count = d.count,
+                taskID = task.taskID
+            })
+        end
+        taskCount = taskCount + 1
+    end
+    rmessage("Request for " .. count .. " " .. itemName .. " submitted. Created ".. taskCount .. " new task(s)")
+    return
+end
+
+local inputRecipeIndex = 1
+local inputRecipeCount = 1
+
+local recipeCount = 0
+
+local btnUp1
+local btnDown1
+local btnSubmit
+local btnSubmit2
+local btnUp2
+local btnDown2
+local btnUp3
+local btnDown3
+local txtRecipe
+local txtCount
+local btnEnum
+local btnWriteData
+local strCurrentRecipeName
+
+function initTestPanel()
+    local brightness = 0.01
+    local panel = component.proxy(component.findComponent("ProdMgr_Panel")[1])
+
+    btnUp1 = panel:getModule(4, 6)
+    btnDown1 = panel:getModule(4, 5)
+    btnSubmit = panel:getModule(8, 3)
+    btnUp2 = panel:getModule(9, 6)
+    btnDown2 = panel:getModule(9, 5)
+    btnUp3 = panel:getModule(10, 6)
+    btnDown3 = panel:getModule(10, 5)
+    txtRecipe = panel:getModule(0, 5)
+    txtCount = panel:getModule(6, 5)
+    btnSubmit2 = panel:getModule(8, 1)
+
+    btnEnum = panel:getModule(0, 10)
+    btnWriteData = panel:getModule(2, 10)
+
+    registerEvent(btnUp2, nil, function()
+        inputRecipeCount = inputRecipeCount + 1
+        txtCount.text = tostring(inputRecipeCount)
+    end)
+    btnUp2:setColor(0,0,1,0)
+    event.listen(btnUp2)
+    registerEvent(btnDown2, nil, function()
+        inputRecipeCount = inputRecipeCount - 1
+        txtCount.text = tostring(inputRecipeCount)
+    end)
+    btnDown2:setColor(0,0,1,0)
+    event.listen(btnDown2)
+    registerEvent(btnUp3, nil, function()
+        inputRecipeCount = inputRecipeCount + 10
+        txtCount.text = tostring(inputRecipeCount)
+    end)
+    btnUp3:setColor(0,0,1,0)
+    event.listen(btnUp3)
+    registerEvent(btnDown3, nil, function()
+        inputRecipeCount = inputRecipeCount - 10
+        txtCount.text = tostring(inputRecipeCount)
+    end)
+    btnDown3:setColor(0,0,1,0)
+    event.listen(btnDown3)
+
+    btnEnum:setColor(1,1,0,0)
+    registerEvent(btnEnum, nil, function()
+        submitWork("Plastic", inputRecipeCount)
+        submitWork("Rubber", inputRecipeCount)
+    end)
+    event.listen(btnEnum)
+    registerEvent(btnWriteData, nil, function()
+        printArrayToFile("/recipes.txt", allRecipes, 4)
+        printArrayToFile("/tasks.txt", tasks, 4)
+    end)
+    event.listen(btnWriteData)
+
+    registerEvent(btnUp1, nil, function()
+        print("btnUp1")
+        inputRecipeIndex = math.max(1, inputRecipeIndex - 1)
+        local i = 1
+        for _,v in pairs(sortedRecipes) do
+            if i == inputRecipeIndex then
+                print(v.recipeName)
+                strCurrentRecipeName = v.recipeName
+                txtRecipe.text = strCurrentRecipeName
+                break
+            end
+            i = i + 1
+        end
+    end)
+    btnUp1:setColor(0,0,1,0)
+    event.listen(btnUp1)
+    registerEvent(btnDown1, nil, function()
+        print("btnDown1")
+        inputRecipeIndex = math.min(inputRecipeIndex + 1, recipeCount)
+        local i = 1
+        for _,v in pairs(sortedRecipes) do
+            if i == inputRecipeIndex then
+                print(v.recipeName)
+                strCurrentRecipeName = v.recipeName
+                txtRecipe.text = strCurrentRecipeName
+                break
+            end
+            i = i + 1
+        end
+    end)
+    btnDown1:setColor(0,0,1,0)
+    event.listen(btnDown1)
+
+    txtRecipe.size = 30
+    txtCount.size = 50
+    txtRecipe.monospace = true
+    txtCount.monospace = true
+
+    txtCount.text = tostring(inputRecipeCount)
+    txtRecipe.text = ""
+    for _,v in pairs(sortedRecipes) do
+        txtRecipe.text = v.recipeName
+        break
+    end
+
+    registerEvent(btnSubmit, nil, function()
+        local recipe = nil
+        local i = 1
+        for _,v in pairs(sortedRecipes) do
+            if i == inputRecipeIndex then
+                recipe = v
+                break
+            end
+            i = i + 1
+        end
+
+        if recipe ~= nil then
+            submitWork(recipe.recipeName, inputRecipeCount)
+        end
+    end)
+    event.listen(btnSubmit)
+
+    registerEvent(btnSubmit2, nil, function()
+        local recipe = nil
+        local i = 1
+        for _,v in pairs(sortedRecipes) do
+            if i == inputRecipeIndex then
+                recipe = v
+                break
+            end
+            i = i + 1
+        end
+
+        if recipe ~= nil then
+            local item = {
+                name = recipe.recipeMakes,
+                count = inputRecipeCount,
+                bus = "Train1",
+                taskID = nil
+            }
+            --rmessage("Requesting " .. item.count .. " " .. item.name .. " from " .. item.bus)
+            submitOrder(recipe.recipeMakes, inputRecipeCount, "Train1")
+            --scriptInfo.network:send(scriptInfo.addresses.BusMgr, 100, "order", "json", json.encode(item))
+            --submitWork(recipe.recipeName, inputRecipeCount)
+        end
+    end)
+    btnSubmit2:setColor(0,1,0,0)
+    event.listen(btnSubmit2)
+
+end
+
+local indWStatus
+local indStatus
+local dispCountInProd
+local dispCountNeedMats
+local dispCountSchedulable
+local dispCount
+local dispProduct
+local multiplier = 1
+local target = "Store"
+
+
+function updateStatus()
+    local err = 0
+    local ok = 1
+    local warning = 0
+    local brightness = 0.5
+    local panel2 = component.proxy(component.findComponent("ProdMgr_WallPanel2")[1])
+    indStatus = panel2:getXModule(5)
+    if err > 0 then
+        indStatus:setColor(1, 0.1, 0.1, brightness)
+    elseif warning > 0 then
+        indStatus:setColor(1, 1, 0.1,   brightness)
+    elseif ok > 0 then
+        indStatus:setColor(0, 0.5, 0.0, brightness)
+    else
+        indStatus:setColor(1, 0.5, 0.0, brightness)
+    end
+    computer.skip()
+    local taskItem = tasks.first
+    err = 0;
+    warning = 0;
+    ok = 0
+    local countProd = 0
+    local countNeed = 0
+    local countSched = 0
+    while taskItem ~= nil do
+        local task = taskItem.value
+        if task.status == TaskStatuses.NEED then
+            countNeed = countNeed + 1
+            err = err + 1
+        elseif task.status == TaskStatuses.SCHEDULE then
+            countSched = countSched + 1
+            warning = warning + 1
+        elseif task.status == TaskStatuses.PROCESSING then
+            countProd = countProd + 1
+            ok = ok + 1
+        end
+        taskItem = taskItem.next
+        computer.skip()
+    end
+
+    dispCountInProd:setText(tostring(countProd))
+    dispCountSchedulable:setText(tostring(countSched))
+    dispCountNeedMats:setText(tostring(countNeed))
+
+
+    if err > 0 then
+        indWStatus:setColor(1, 1, 0.1, brightness)
+    elseif warning > 0 then
+        indWStatus:setColor(1, 1, 0.1, brightness)
+    elseif ok > 0 then
+        indWStatus:setColor(0, 0.5, 0.0, brightness)
+    else
+        indWStatus:setColor(0, 0, 0, brightness)
+    end
+
+    dispCount:setText(inputRecipeCount)
+    dispProduct:setText(strCurrentRecipeName)
+    computer.skip()
+    return false
+end
+
+
+function printAssisBox()
+    local systemColors = scriptInfo.systemColors
+    local x = 277
+    local y = 44
+    rssetForegroundA(systemColors.Grey)
+    rsprint(x, y + 0, "╔═════════════════════╗")
+    rsprint(x, y + 1, "║                     ║") -- 21 wide
+    rsprint(x, y + 2, "║                     ║")
+    rsprint(x, y + 3, "║                     ║")
+    rsprint(x, y + 4, "║                     ║")
+    rsprint(x, y + 5, "║                     ║")
+    rsprint(x, y + 6, "║                     ║")
+    rsprint(x, y + 7, "╚═════════════════════╝")
+    --rsprint(x, y + 0, "-----------------------")
+    --rsprint(x, y + 1, "|                     |")
+    --rsprint(x, y + 2, "|                     |")
+    --rsprint(x, y + 3, "|                     |")
+    --rsprint(x, y + 4, "|                     |")
+    --rsprint(x, y + 5, "|                     |")
+    --rsprint(x, y + 6, "|                     |")
+    --rsprint(x, y + 7, "-----------------------")
+    --print("╔═════════════════════╗")
+    rssetForegroundA(systemColors.Normal)
+    rsprint(x + 1, y + 1, "Recipe: ")
+    local str = strCurrentRecipeName
+    if str then
+        rssetForegroundA(systemColors.LightBlue)
+        if string.len(str) > 20 then
+            str = string.sub(str, 1, 20)
+        end
+        rsprint(x + 2, y + 2, str)
+    end
+    rssetForegroundA(systemColors.Normal)
+    rsprint(x + 1, y + 3, "Amount: ")
+    rssetForegroundA(systemColors.Number)
+    rsprint(x + 19, y + 3, lpad(tostring(inputRecipeCount), 3, " "))
+    --rssetForegroundA(systemColors.Normal)
+    --if multiplier < 10 then
+    --    rsprint(x + 20, y + 4, "+")
+    --    rssetForegroundA(systemColors.Number)
+    --    rsprint(x + 21, y + 4, tostring(multiplier))
+    --elseif multiplier < 100 then
+    --    rsprint(x + 19, y + 4, "+")
+    --    rssetForegroundA(systemColors.Number)
+    --    rsprint(x + 20, y + 4, tostring(multiplier))
+    --end
+    rssetForegroundA(systemColors.Normal)
+    rsprint(x + 1, y + 5, "Send to: ")
+    rssetForegroundA(systemColors.LightBlue)
+    if target == "store" then
+        rsprint(x + 15, y + 5, "Storage")
+    elseif target == "user" then
+        rsprint(x + 18, y + 5, "User")
+    elseif target == "trash" then
+        rsprint(x + 11, y + 5, "Destruction")
+    else
+        rssetForegroundA(systemColors.LightRed)
+        rsprint(x + 15, y + 5, "Unknown")
+    end
+    rssetForegroundA(systemColors.Normal)
+    rsprint(x + 1, y + 6, "Idle Craft: ")
+    if enableIdleCrafting then
+        rssetForegroundA(systemColors.LightBlue)
+        rsprint(x + 20, y + 6, "On")
+    else
+        rssetForegroundA(systemColors.Normal)
+        rsprint(x + 19, y + 6, "Off")
+    end
+    computer.skip()
+
+
+end
+
+function initWallPanel()
+    local litButtonAlpha = 0.6
+
+    local panel1 = component.proxy(component.findComponent("ProdMgr_WallPanel1")[1])
+    local panel2 = component.proxy(component.findComponent("ProdMgr_WallPanel2")[1])
+    local panel3 = component.proxy(component.findComponent("ProdMgr_WallPanel3")[1])
+
+
+    local btnWSubmit = panel2:getXModule(2)
+          indStatus = panel2:getXModule(5)
+          indWStatus = panel2:getXModule(4)
+          dispCountInProd = panel3:getXModule(5)
+          dispCountSchedulable = panel3:getXModule(4)
+          dispCountNeedMats = panel3:getXModule(3)
+
+          dispProduct = panel3:getXModule(1)
+          dispCount = panel3:getXModule(0)
+
+    local btnWPreviouRecipe = panel1:getXModule(5)
+    local btnWNextRecipe = panel1:getXModule(4)
+
+
+    --local btnWIncreaseAmount = panel1:getXModule(2)
+    --local btnWDecreaseAmount = panel1:getXModule(1)
+
+    --local swWMultiplier = panel1:getXModule(0)
+    local swTarget = panel2:getXModule(0)
+    local swIdleCraft = panel2:getXModule(1)
+
+    local btnAmount0 = panel1:getXModule(3)
+    local encAmount1 = panel1:getXModule(2)
+    local encAmount10 = panel1:getXModule(1)
+    local encAmount100 = panel1:getXModule(0)
+
+    --setCommandLabelText(panel1, 5, "Previous\nRecipe", false)
+    --setCommandLabelText(panel1, 4, "Next\nRecipe", false)
+    --setCommandLabelText(panel1, 3, "", false)
+    --setCommandLabelText(panel1, 2, "Amount\n+", false)
+    --setCommandLabelText(panel1, 1, "Amount\n-", false)
+    --setCommandLabelText(panel1, 0, "   +10\n    +1", false)
+--
+    --setCommandLabelText(panel2, 5, "Status", false)
+    --setCommandLabelText(panel2, 4, "N/U", false)
+    --setCommandLabelText(panel2, 3, "", false)
+    --setCommandLabelText(panel2, 2, "Submit\nWork", false)
+    --setCommandLabelText(panel2, 1, "", false)
+    --setCommandLabelText(panel2, 0, "", false)
+
+
+    dispCountInProd:setColor(0.2, 1, 0.2, 0.5)
+    dispCountInProd:setText("0")
+    dispCountSchedulable:setColor(1, 1, 0.2, 0.5)
+    dispCountSchedulable:setText("0")
+    dispCountNeedMats:setColor(1, 0.2, 0.2, 0.5)
+    dispCountNeedMats:setText("0")
+    dispProduct:setColor(0.6, 0.6, 0.6, 0.5)
+    dispProduct:setText("")
+    dispCount:setColor(0.6, 0.6, 0.6, 0.5)
+    dispCount:setText("0")
+
+    indWStatus:setColor(0.1, 0.1, 0.1, 0)
+    initModularButton(encAmount1,
+            function(self, msg, params)
+                inputRecipeCount = inputRecipeCount + params[3]
+                if(inputRecipeCount < 0) then
+                    inputRecipeCount = 0
+                end
+                printScreen()
+            end,
+            rgba(0,0,0,0), true
+    )
+    initModularButton(encAmount10,
+            function(self, msg, params)
+                inputRecipeCount = inputRecipeCount + params[3] * 10
+                if(inputRecipeCount < 0) then
+                    inputRecipeCount = 0
+                end
+                printScreen()
+            end,
+            rgba(0,0,0,0), true
+    )
+    initModularButton(encAmount100,
+            function(self, msg, params)
+                inputRecipeCount = inputRecipeCount + params[3] * 100
+                if(inputRecipeCount < 0) then
+                    inputRecipeCount = 0
+                end
+                printScreen()
+            end,
+            rgba(0,0,0,0), true
+    )
+    initModularButton(btnAmount0,
+            function(self, msg, params)
+                inputRecipeCount = 0
+                printScreen()
+            end,
+            rgba(0,0,0,0), true
+    )
+
+    initModularButton(
+            btnWSubmit,
+            function(self, msg, params)
+                self:setColor(0, 1, 0, litButtonAlpha)
+
+                local recipe = nil
+                local i = 1
+                for _,v in pairs(sortedRecipes) do
+                    if i == inputRecipeIndex then
+                        recipe = v
+                        break
+                    end
+                    i = i + 1
+                end
+
+                if recipe ~= nil then
+                    if target == "store" then
+                        submitWork(recipe.recipeName, inputRecipeCount)
+                    elseif target == "user" then
+                        submitOrder(recipe.recipeMakes, inputRecipeCount, "UserRequestA")
+                    end
+                end
+
+                printScreen()
+                wait(1000)
+                self:setColor(0, 1, 0, 0)
+            end,
+            rgba(0, 1, 0, 0),
+            true
+    )
+    initModularButton(
+            btnWPreviouRecipe,
+            function(self, msg, params)
+                self:setColor(0, 0, 1, litButtonAlpha)
+
+                inputRecipeIndex = math.max(1, inputRecipeIndex - 1)
+                local i = 1
+                for _,v in pairs(sortedRecipes) do
+                    if i == inputRecipeIndex then
+                        print(v.recipeName)
+                        strCurrentRecipeName = v.recipeName
+                        break
+                    end
+                    i = i + 1
+                end
+
+                printScreen()
+                wait(100)
+                self:setColor(0, 0, 0.3, 0)
+            end,
+            rgba(0, 0, 0.3, 0),
+            true
+    )
+    initModularButton(
+            btnWNextRecipe,
+            function(self, msg, params)
+                self:setColor(0, 0, 1, litButtonAlpha)
+
+                inputRecipeIndex = math.min(inputRecipeIndex + 1, recipeCount)
+                local i = 1
+                for _,v in pairs(sortedRecipes) do
+                    if i == inputRecipeIndex then
+                        print(v.recipeName)
+                        strCurrentRecipeName = v.recipeName
+                        break
+                    end
+                    i = i + 1
+                end
+
+                printScreen()
+                wait(100)
+                self:setColor(0, 0, 0.3, 0)
+            end,
+            rgba(0, 0, 0.3, 0),
+            true
+    )
+    --initModularButton(
+    --        btnWDecreaseAmount,
+    --        function(self, msg, params)
+    --            self:setColor(0, 0, 1, litButtonAlpha)
+--
+    --            inputRecipeCount = inputRecipeCount - multiplier
+--
+    --            if inputRecipeCount <= 0 then
+    --                inputRecipeCount = 0
+    --            end
+--
+    --            printScreen()
+    --            wait(100)
+    --            self:setColor(0, 0, 0.3, 0)
+    --        end,
+    --        rgba(0, 0, 0.3, 0),
+    --        true
+    --)
+    --initModularButton(
+    --        btnWIncreaseAmount,
+    --        function(self, msg, params)
+    --            self:setColor(0, 0, 1, litButtonAlpha)
+--
+    --            inputRecipeCount = inputRecipeCount + multiplier
+--
+    --            if inputRecipeCount > 100 then
+    --                inputRecipeCount = 100
+    --            end
+--
+    --            printScreen()
+    --            wait(100)
+    --            self:setColor(0, 0, 0.3, 0)
+    --        end,
+    --        rgba(0, 0, 0.3, 0),
+    --        true
+    --)
+    --initModularButton(
+    --        swWMultiplier,
+    --        function(self, msg, params)
+    --            self:setColor(0, 0, 1, litButtonAlpha)
+    --            --print("swWMultiplier: " .. msg)
+    --            --printArray(params)
+    --            if params[3] == true then
+    --                multiplier = 10
+    --            else
+    --                multiplier = 1
+    --            end
+    --            printScreen()
+    --            wait(1000)
+    --            self:setColor(0, 0, 0, 0)
+    --        end,
+    --        rgba(0, 0, 0, 0),
+    --        true
+    --)
+    local swTargetColor_User = rgba(0, 1, 0, litButtonAlpha / 3)
+    local swTargetColor_Store = rgba(0.4, 0.4, 1, litButtonAlpha / 3)
+    local swTargetColor_Trash = rgba(1, 0.4, 0.4, litButtonAlpha / 3)
+    local swIdleCraftColor_On = rgba(0, 1, 0, litButtonAlpha / 3)
+    local swIdleCraftColor_Off = rgba(0, 0, 0, 0)
+    initModularButton(
+            swTarget,
+            function(self, msg, params)
+                --print("swWMultiplier: " .. msg)
+                --printArray(params)
+                if params[3] == 2 then
+                    target = "user"
+                    self:setColor(swTargetColor_User[1], swTargetColor_User[2], swTargetColor_User[3], swTargetColor_User[4])
+                elseif params[3] == 1 then
+                    target = "store"
+                    self:setColor(swTargetColor_Store[1], swTargetColor_Store[2], swTargetColor_Store[3], swTargetColor_Store[4])
+                else
+                    target = "trash"
+                    self:setColor(swTargetColor_Trash[1], swTargetColor_Trash[2], swTargetColor_Trash[3], swTargetColor_Trash[4])
+                end
+                printScreen()
+                wait(100)
+            end,
+            rgba(0, 0, 0, 0),
+            true
+    )
+    print("State: " .. tostring(swTarget.state))
+    if swTarget.state == 2 then
+        swTarget:setColor(swTargetColor_User[1], swTargetColor_User[2], swTargetColor_User[3], swTargetColor_User[4])
+        target = "user"
+    elseif swTarget.state == 1 then
+        swTarget:setColor(swTargetColor_Store[1], swTargetColor_Store[2], swTargetColor_Store[3], swTargetColor_Store[4])
+        target = "store"
+    elseif swTarget.state == 0 then
+        swTarget:setColor(swTargetColor_Trash[1], swTargetColor_Trash[2], swTargetColor_Trash[3], swTargetColor_Trash[4])
+        target = "trash"
+    end
+
+    initModularButton(
+            swIdleCraft,
+            function(self, msg, params)
+                print("Idle crafting buttons: " .. tostring(params[3]))
+                if params[3] == true then
+                    enableIdleCrafting = true
+                    swIdleCraft:setColor(swIdleCraftColor_On[1], swIdleCraftColor_On[2], swIdleCraftColor_On[3], swIdleCraftColor_On[4])
+                    queueLowStockIfIdle(true)
+                else
+                    enableIdleCrafting = false
+                    swIdleCraft:setColor(swIdleCraftColor_Off[1], swIdleCraftColor_Off[2], swIdleCraftColor_Off[3], swIdleCraftColor_Off[4])
+                end
+                printScreen()
+                wait(100)
+            end,
+            nil,
+            true
+    )
+    if swIdleCraft.state == true then
+        enableIdleCrafting = true
+        swIdleCraft:setColor(swIdleCraftColor_On[1], swIdleCraftColor_On[2], swIdleCraftColor_On[3], swIdleCraftColor_On[4])
+    else
+        enableIdleCrafting = false
+        swIdleCraft:setColor(swIdleCraftColor_Off[1], swIdleCraftColor_Off[2], swIdleCraftColor_Off[3], swIdleCraftColor_Off[4])
+    end
+    --if swWMultiplier.state == true then
+    --    multiplier = 10
+    --else
+    --    multiplier = 1
+    --end
+    --if swTarget.state == true then
+    --    target = "user"
+    --    swTarget:setColor(0, 1, 0, litButtonAlpha / 2)
+    --else
+    --    target = "store"
+    --    swTarget:setColor(0.4, 0.4, 1, litButtonAlpha / 2)
+    --end
+
+    periodicStuff:push({
+        func = function()
+            updateStatus()
+        end,
+        ref = indStatus
+    })
+    computer.skip()
+end
+
+function caluclateMaxOrder(recipe)
+    local breakLoop = false
+    local maxMultiplier = 1
+    while true do
+        for _,_s in pairs(recipe.regents) do
+            if stackSize[_s.name] and _s.count * maxMultiplier > stackSize[_s.name] then
+                maxMultiplier = maxMultiplier - 1
+                breakLoop = true
+                break
+            elseif not stackSize[_s.name] then
+                error("No stack size for " .. _s.name)
+            end
+            computer.skip()
+        end
+        if breakLoop then
+            break
+        end
+        maxMultiplier = maxMultiplier + 1
+    end
+    if maxMultiplier < 1 then
+        --printArray(recipe, 1)
+        --printArray(recipe.regents, 1)
+        error("Max multiplier < 0")
+    end
+    return maxMultiplier
+end
+
+local craftUnits = {}
+
+function sortRecipes()
+    sortedRecipes = {}
+    local i = 1
+    for _,v in pairs(allRecipes) do
+        sortedRecipes[i] = v
+        if string.len(v.recipeName) > 11 then
+            if string.sub(v.recipeName, 1, 11) == "Alternate: " then
+                v.isAlternative = true
+            end
+        end
+        computer.skip()
+        i = i + 1
+    end
+    print(tostring(i - 1) .. " recipes copied")
+    coroutine.resume(coroutine.create(function ()
+        table.sort(sortedRecipes, function (a,b)
+            return string.upper(a.recipeMakes) < string.upper(b.recipeMakes:upper())
+        end)
+        for _,v in pairs(sortedRecipes) do
+            txtRecipe.Text = v.recipeName
+            break
+        end
+    end))
+end
+
+local lowStock = {}
+
+function initNetwork()
+    networkHandler(100, function(self, address, parameters, parameterOffset)  -- Initiate handler for port 100
+        local msg = parameters[parameterOffset] -- extract message identifier
+        --print(msg)
+        if msg and self.subhandlers[msg] then  -- if msg is not nil and we have a subhandler for it
+            local handler = self.subhandlers[msg] -- put subhandler into local variable for convenience
+            if parameters[parameterOffset + 1] == "json" then
+                parameters = json.decode(parameters[parameterOffset + 2])
+                handler(address, parameters, nil) -- call subhandler
+            else
+                handler(address, parameters, parameterOffset + 1) -- call subhandler
+            end
+        elseif not msg then -- no handler or nil message
+            print ("No message identifier defined")
+        else
+            print ("No handler for " .. parameters[parameterOffset])
+        end
+    end, { -- table of message handlers
+        --craftUnitData = function(address, parameters)
+        --    error("Deprecated")
+        --    if true then return end
+        --    local craftUnit = {
+        --        name = parameters.craftUnit,
+        --        address = address,
+        --        recipes = {},
+        --        makers = {}
+        --    }
+        --    print("Received craftUnit data for " .. craftUnit.name .. " from " .. address )
+        --    craftUnits[address] = craftUnit
+        --    makerList[craftUnit.name] = craftUnit
+        --end,
+        --recipeData = function(address, parameters)
+        --    error("Deprecated")
+        --    if true then return end
+        --    print("Recieved recipe " .. parameters.recipeName .. " from " .. craftUnits[address].name)
+        --    if allRecipes[parameters.recipeName] == nil then
+        --        parameters.maxOrder = caluclateMaxOrder(parameters)
+        --        allRecipes[parameters.recipeName] = parameters
+        --        allRecipes[parameters.recipeName].makers = {}
+        --        if recipeCount == 1 then
+        --            txtRecipe.text = parameters.recipeName
+        --        end
+        --        recipeCount = recipeCount + 1
+        --    end
+        --    craftUnits[address].recipes[parameters.recipeName] = allRecipes[parameters.recipeName]
+        --end,
+        --makerData = function(address, parameters)
+        --    --printArrayToFile("/log.txt", parameters)
+        --    error("Deprecated")
+        --    if true then return end
+        --    local craftUnit = craftUnits[address]
+        --    computer.skip()
+        --    local maker = createMaker(craftUnit, craftUnit.recipes, parameters.index)
+        --    print("Recieved maker " .. tostring(maker.index) .. " from " .. craftUnit.name)
+        --    craftUnit.makers[maker.index] = maker
+        --    --print("Maker.... ")
+        --    maker.status = parameters.status
+        --    for _,v in pairs(craftUnit.recipes) do
+        --        --print("Insert maker")
+        --        allRecipes[v.recipeName].makers[craftUnit.name .. "_" .. tostring(maker.index)] = maker
+        --        --table.insert(, maker)
+        --    end
+        --   -- printArrayToFile("/recipes.txt", allRecipes, 3)
+        --    --printArrayToFile("/craftUnit" .. craftUnit.name ..".txt", craftUnit, 3)
+
+        --end,
+        allMakerData = function(address, parameters)
+            local craftUnit = {
+                name = parameters.craftUnit,
+                comment = parameters.comment,
+                address = address,
+                recipes = {},
+                makers = {}
+            }
+            craftUnits[address..":"..craftUnit.name] = craftUnit
+            --printArray(parameters, 0)
+            --printArray(craftUnit, 1)
+            for _,recipe in pairs(parameters.recipes) do
+                local name = recipe.recipeName
+                if allRecipes[name] == nil then
+                    --print("Making recipe")
+                    recipe.maxOrder = caluclateMaxOrder(recipe)
+                    allRecipes[name] = recipe
+                    if recipeCount == 1 then
+                        strCurrentRecipeName = name
+                        if txtRecipe then
+                            txtRecipe.text = strCurrentRecipeName
+                        end
+                    end
+                    recipeCount = recipeCount + 1
+                    --craftUnits[address].recipes[parameters.recipeName] = allRecipes[parameters.recipeName]
+                    allRecipes[name].makers = {}
+                end
+                craftUnit.recipes[name] = allRecipes[name]
+                --print(allRecipes[name])
+                --print(recipe.recipeName)
+            end
+            for _,makerData in pairs(parameters.makers) do
+                computer.skip()
+                local maker = createMaker(craftUnit, craftUnit.recipes, makerData.index)
+                --print("Recieved maker " .. tostring(maker.index) .. " from " .. craftUnit.name)
+                craftUnit.makers[maker.index] = maker
+                --print("Maker.... ")
+                maker.status = makerData.status
+                for _,v in pairs(craftUnit.recipes) do
+                    --print("Insert maker")
+                    allRecipes[v.recipeName].makers[craftUnit.name .. "_" .. tostring(maker.index)] = maker
+                    --table.insert(, maker)
+                end
+            end
+            --printArray(craftUnit.recipes, 1)
+            --error("A")
+            sortRecipes()
+        end,
+        submitWork = function(address, parameters)
+            if parameters.reserved then
+                sucessfullReservation(parameters.taskID, parameters.name, parameters.reserved)
+            end
+            submitWork(parameters.name, parameters.count, parameters.taskID)
+        end,
+        requestTo = function(address, parameters)
+            submitOrder(parameters.name, parameters.count, parameters.bus)
+        end,
+        finishedTask = function(address, parameters)
+            finishedTask(parameters.taskID)
+            local craftUnit = craftUnits[address]
+            if craftUnit ~= nil then
+                for _,v in pairs(craftUnit.makers) do
+                    if v.status == FactoryStatuses.WORKING and v.index == parameters.factoryIndex then
+                        v.status = FactoryStatuses.IDLE
+                        rwarning("Rouge machine in " .. craftUnit.name .. " cleared")
+                        break
+                    end
+                end
+            end
+        end,
+        dependencyFinished = function(address, parameters)
+            finishedDependency(parameters.taskID, parameters.name)
+        end,
+        dumpAll = function()
+            rdebug("Dumping data to files")
+            printArrayToFile("temp.txt", craftUnits, 4)
+            printArrayToFile("temp2.txt", allRecipes, 4)
+        end,
+        lowStock = function(address, parameters)
+            print("Low stock data received")
+            local oldStock = lowStock
+            for k,v in pairs(parameters) do
+                lowStock[k] = v
+            end
+            if enableIdleCrafting then
+                queueLowStockIfIdle(true)
+            end
+        end
+    })
+end
+local lastLowStock = 0
+local lowStockOutstanding = {}
+local LOW_STOCK_TIMEOUT = 60000
+
+function queueLowStockIfIdle(forced)
+    local tick = computer.millis()
+    if tick - lastLowStock > LOW_STOCK_TIMEOUT and tasks.length < 30 and enableIdleCrafting or forced then
+        if lowStock ~= nil then
+            for itemID,item in pairs(lowStock) do
+                for _,v in pairs(allRecipes) do
+                    if v.recipeName == item.name then
+                        rdebug("Low stock on " .. item.name .. ", ordering " .. tostring(v.maxOrder) .. " units")
+                        if lowStockOutstanding[item.name] == nil then
+                            lowStockOutstanding[item.name] = v.maxOrder
+                            item.ordered = v.maxOrder
+                            local task = submitWork(v.recipeName, v.maxOrder, nil, function(task)
+                                if task.lowStockOrder ~= nil then
+                                    local recipe = task.lowStockOrder.name
+                                    if lowStockOutstanding[recipe] ~= nil then
+                                        lowStockOutstanding[recipe] = lowStockOutstanding[recipe] - task.lowStockOrder.ordered
+                                        if lowStockOutstanding[recipe] <= 0 then
+                                            lowStockOutstanding[recipe] = nil
+                                        end
+                                        rdebug("Low stock order finished " .. recipe .. " outstanding removed")
+                                    else
+                                        rdebug("Low stock order finished " .. recipe)
+                                    end
+                                end
+                            end)
+                            task.lowStockOrder = item
+                        else
+                            print("Already in production: " .. item.name)
+                        end
+                        table.remove(lowStock, itemID)
+                        return true
+                    end
+                    computer.skip()
+                end
+                computer.skip()
+            end
+        else
+            print("No low stock data")
+        end
+        lastLowStock = tick
+    end
+    return false
+end
+
+function initLowStockQueueing()
+    periodicStuff:push({
+        func = function()
+            return queueLowStockIfIdle()
+        end,
+        ref = nil,
+    })
+end
+
+
+function requestMakers()
+    print("Requesting craft units... ")
+    scriptInfo.network:broadcast(105, "pushMakerInfo")
+end
+
+local StateColors = {}
+StateColors[TaskStatuses.UNKNOWN] = rgba(0.5,0.5,0.5,1)
+StateColors[TaskStatuses.PROCESSING] = rgba(0.5,1,0.5,1)
+StateColors[TaskStatuses.NEED] = rgba(1,0.5,0.5,1)
+StateColors[TaskStatuses.SCHEDULE] = rgba(1,0.78,0.45,1)
+local StateToString = {}
+StateToString[TaskStatuses.UNKNOWN] = "Unkn"
+StateToString[TaskStatuses.PROCESSING] = "Proc"
+StateToString[TaskStatuses.NEED] = "Need"
+StateToString[TaskStatuses.SCHEDULE] = "Schd"
+
+
+local QUEUE_COL_WIDTH = 40
+local CRAFT_COL_WIDTH = 35
+local QUEUE_X_INSET = 2
+local ID_COLOR = rgba(0.6, 0.2, 0.7, 1)
+local AMOUNT_COLOR = rgba(0.4, 0.4, 0.8, 1)
+local TREE_COLOR = rgba(0.3, 0.3, 0.3, 0.5)
+
+function printDependency(x, y, dependency)
+    local _x = x
+    if dependency.satisfied then
+        rssetForegroundA(scriptInfo.systemColors.Green);
+    else
+        rssetForegroundA(scriptInfo.systemColors.Yellow);
+    end
+    rsprint(x, y, dependency.name)
+    x = x + string.len(dependency.name) + 1
+    rssetForegroundA(scriptInfo.systemColors.Number);
+    rsprint(x, y, lpad(tostring(dependency.count), 3, " "))
+    x = _x
+    x, y = rsadvanceY(x, y, QUEUE_COL_WIDTH);
+    local depCount = #dependency.subtasks
+    local depIndex = 1
+    local ly = y
+    local lx = x
+    for _,v in pairs(dependency.subtasks) do
+        local ltask = taskMap[v]
+        if ltask ~= nil then
+            rssetForegroundA(TREE_COLOR);
+            if depIndex < depCount then
+                rsprint(x, y, "├")
+            else
+                rsprint(x, y, "└")
+            end
+            if y < ly then
+                for i = ly + 1, scriptInfo.screenHeight do
+                    rsprint(lx, i, "│")
+                end
+                ly = -1
+            end
+            if y - ly > 0 then
+                for i = ly + 1, y - 1 do
+                    rsprint(x, i, "│")
+                end
+            end
+            ly = y
+            lx = x
+            x, y = printTask2(x + QUEUE_X_INSET, y, ltask.value);
+            x = x - QUEUE_X_INSET
+            depIndex = depIndex + 1
+        end
+    end
+
+    computer.skip()
+    return x, y;
+end
+
+function printTask(x, y, task)
+    local _x = x
+    --printArray(task, 1)
+    rssetForegroundA(scriptInfo.systemColors.Number);
+    rsprint(x, y,lpad(tostring(task.taskID), 3, " "))
+    x = x + 3
+    if task.parent ~= nil then
+        rssetForegroundA(scriptInfo.systemColors.Normal);
+        rsprint(x, y,lpad(tostring(task.taskID), 3, " > "))
+        x = x + 3
+        rssetForegroundA(scriptInfo.systemColors.Orange);
+        rsprint(x, y,lpad(tostring(task.parent.value.taskID), 3, " "))
+        x = x + 3
+    end
+    rssetForegroundA(scriptInfo.systemColors.Normal);
+    rsprint(x, y,": ")
+    x = x + 2
+    rssetForegroundA(scriptInfo.systemColors.Number);
+    rsprint(x, y,lpad(tostring(task.count), 3, " "))
+    x = x + 3
+    rssetForegroundA(scriptInfo.systemColors.Normal);
+    rsprint(x, y, "x")
+    x = x + 2
+    rsprint(x, y, task.target)
+    x = x + string.len(task.target) + 4
+    --print("Status: '"..tostring(task.status).."'")
+    rssetForegroundA(StateColors[task.status]);
+    rsprint(x, y, StateToString[task.status]); y = y + 1
+    computer.skip()
+end
+
+
+function printTask2(x, y, task)
+    local _x = x
+    --printArray(task, 1)
+    rssetForegroundA(ID_COLOR);
+    local id = tostring(task.taskID)
+    rsprint(x, y, id)
+    x = x + string.len(id)
+    --if task.parent ~= nil then
+    --    rssetForegroundA(scriptInfo.systemColors.Normal);
+    --    rsprint(x, y,lpad(tostring(task.taskID), 3, " > "))
+    --    x = x + 3
+    --    rssetForegroundA(scriptInfo.systemColors.Orange);
+    --    rsprint(x, y,lpad(tostring(task.parent.value.taskID), 3, " "))
+    --    x = x + 3
+    --end
+    rssetForegroundA(scriptInfo.systemColors.Normal);
+    rsprint(x, y,": ")
+    x = x + 2
+    if task.lowStockOrder ~= nil then
+        rssetForegroundA(scriptInfo.systemColors.Orange);
+        rsprint(x, y,"↑")
+        x = x + 2
+    end
+    rssetForegroundA(AMOUNT_COLOR);
+    local count = tostring(task.count)
+    rsprint(x, y, count)
+    x = x + string.len(count)
+    rssetForegroundA(scriptInfo.systemColors.Normal);
+    rsprint(x, y, "x")
+    x = x + 2
+    rsprint(x, y, task.target)
+    x = x + string.len(task.target) + 1
+    --print("Status: '"..tostring(task.status).."'")
+    if StateColors[task.status] == nil then
+        printArray(task, 2)
+        rerror("Invalid task status? " .. task.status)
+        error("Die")
+    end
+    rssetForegroundA(scriptInfo.systemColors.Normal);
+    rsprint(x, y, "("); x = x + 1
+    rssetForegroundA(StateColors[task.status]);
+    local statusStr = StateToString[task.status]
+    rsprint(x, y, statusStr);
+    x = x + string.len(statusStr)
+    rssetForegroundA(scriptInfo.systemColors.Normal);
+    rsprint(x, y, ")");
+    x = _x
+    x, y = rsadvanceY(x, y, QUEUE_COL_WIDTH);
+    local depCount = #task.dependencies
+    local depIndex = 1
+    local ly = y
+    local lx = x
+    for _,v in pairs(task.dependencies) do
+        rssetForegroundA(TREE_COLOR);
+        if depIndex < depCount then
+            rsprint(x, y, "├")
+        else
+            rsprint(x, y, "└")
+        end
+        if y < ly then
+            for i = ly + 1, scriptInfo.screenHeight do
+                rsprint(lx, i, "│")
+            end
+            ly = -1
+        end
+        if y - ly > 0 then
+            for i = ly + 1, y - 1 do
+                rsprint(x, i, "│")
+            end
+        end
+        ly = y
+        lx = x
+        --if ltask ~= nil then
+        --    x, y = printTask2(x + QUEUE_X_INSET, y, ltask.value);
+        --    x = x - QUEUE_X_INSET
+        --else
+        x, y = printDependency(x + QUEUE_X_INSET, y, v)
+        x = x - QUEUE_X_INSET
+        --x, y = rsadvanceY(x, y, QUEUE_COL_WIDTH);
+        --end
+        depIndex = depIndex + 1
+    end
+
+    computer.skip()
+    return x, y;
+end
+
+function printMaker(x, y, maker)
+    local systemColors = scriptInfo.systemColors
+    local str = maker.craftUnit.name
+    local _x = x
+    rssetForegroundA(systemColors.LightBlue)
+    str = tostring(maker.numIndex)
+    rsprint(x, y, str)
+    --x = x + string.len(str) + 2
+    x = _x + 6
+    if maker.status == FactoryStatuses.UNKNOWN then
+        rssetForegroundA(systemColors.Grey)
+        rsprint(x, y, "UNKNOWN")
+        x = x + 8
+    elseif maker.status == FactoryStatuses.WORKING then
+        rssetForegroundA(systemColors.Green)
+        rsprint(x, y, "WORKING")
+        x = x + 7
+        rssetForegroundA(systemColors.Normal)
+        rsprint(x, y, "[Task:")
+        x = x + 6
+        if maker.taskID == nil then
+            rssetForegroundA(systemColors.LightRed)
+            rsprint(x, y, "?")
+            x = x + 1
+        else
+            rssetForegroundA(systemColors.Purple)
+            str = tostring(maker.taskID)
+            rsprint(x, y, str)
+            x = x + string.len(str)
+        end
+        rssetForegroundA(systemColors.Normal)
+        rsprint(x, y, "]")
+        x = x + 2
+    elseif maker.status == FactoryStatuses.IDLE then
+        rssetForegroundA(systemColors.Yellow)
+        rsprint(x, y, "IDLE")
+        x = x + 5
+    end
+end
+
+function countAssocTable(table)
+    local c = 0
+    for _,__ in pairs(table) do
+        c = c + 1
+    end
+    return c
+end
+
+function printCraftUnitInfo(x, y, craftUnit)
+    local systemColors = scriptInfo.systemColors
+    local _x = x
+    local str = craftUnit.name
+    rssetForegroundA(systemColors.Cyan)
+    rsprint(x, y, str)
+    x = x + string.len(str)
+    rssetForegroundA(systemColors.Normal)
+    rsprint(x, y, ":")
+    x = x + 2
+    str = craftUnit.comment
+    if str == nil then
+        str = "None"
+    end
+    rssetForegroundA(systemColors.Grey)
+    rsprint(x, y, "(" .. str .. ")")
+    x = x + 4 + string.len(str)
+    rssetForegroundA(systemColors.Number)
+    str = tostring(countAssocTable(craftUnit.recipes))
+    rsprint(x, y,  str)
+    x = x + string.len(str) + 1
+    rssetForegroundA(systemColors.Normal)
+    rsprint(x, y, "recipes")
+    x = _x
+    y = y + 1
+    local ly = y
+    local lx = x
+    local depIndex = 1
+    local depCount = 0
+    for _,_ in pairs(craftUnit.makers) do
+        depCount = depCount + 1
+    end
+    for _,maker in pairs(craftUnit.makers) do
+        rssetForegroundA(TREE_COLOR);
+        if depIndex < depCount then
+            rsprint(x, y, "├")
+        else
+            rsprint(x, y, "└")
+        end
+        if y < ly then
+            for i = ly + 1, scriptInfo.screenHeight do
+                rsprint(lx, i, "│")
+            end
+            ly = -1
+        end
+        if y - ly > 0 then
+            for i = ly + 1, y - 1 do
+                rsprint(x, i, "│")
+            end
+        end
+        ly = y
+        lx = x
+        depIndex = depIndex + 1
+        printMaker(x + 2, y, maker)
+        x, y = rsadvanceY(x, y, CRAFT_COL_WIDTH)
+        computer.skip()
+    end
+    return x, y
+end
+
+function printScreen()
+    scriptInfo.gpu = computer.getGPUs()[1]
+    --scriptInfo.gpu:setText(1, 1, "╚═════════════════════╝")
+    local taskItem = tasks.first
+    local x = 0
+    local y = 0
+    local systemColors = scriptInfo.systemColors
+    rsclear()
+    rssetForegroundA(systemColors.Normal);
+    rsprint(x, y, "Tasks: "); y = y + 1
+    while taskItem ~= nil do
+        local task = taskItem.value
+        if task.parent == nil or task.parent == 0 then
+            x, y = printTask2(x, y, task)
+        end
+        --y = y + 1
+        --x, y = rsadvanceY(x, y, CRAFT_COL_WIDTH)
+        --for _,v in pairs(task.dependencies) do
+        --    printDependency(x, y, v)
+        --    x, y = rsadvanceY(x, y, CRAFT_COL_WIDTH)
+        --end
+
+        taskItem = taskItem.next
+    end
+    x = 210
+    y = 0
+    rssetForegroundA(systemColors.Normal);
+    rsprint(x, y, "Craft units: "); y = y + 1
+    local ly = y
+    local lx = x
+    local depIndex = 1
+    local depCount = 0
+    for _,_ in pairs(craftUnits) do
+        depCount = depCount + 1
+    end
+    for _,craftUnit in pairs(craftUnits) do
+        rssetForegroundA(TREE_COLOR);
+        if depIndex < depCount then
+            rsprint(x, y, "├")
+        else
+            rsprint(x, y, "└")
+        end
+        if y < ly then
+            for i = ly + 1, scriptInfo.screenHeight do
+                rsprint(lx, i, "│")
+            end
+            ly = -1
+        end
+        if y - ly > 0 then
+            for i = ly + 1, y - 1 do
+                rsprint(x, i, "│")
+            end
+        end
+        ly = y
+        lx = x
+        depIndex = depIndex + 1
+        x, y = printCraftUnitInfo(x + 2, y, craftUnit)
+        x = x - 2
+        x, y = rsadvanceY(x, y, CRAFT_COL_WIDTH)
+    end
+    printAssisBox()
+    rsflush()
+end
+
+function printScreen2()
+    scriptInfo.gpu = computer.getGPUs()[1]
+    --scriptInfo.gpu:setText(1, 1, "╚═════════════════════╝")
+    local taskItem = tasks.first
+    local x = 0
+    local y = 0
+    local systemColors = scriptInfo.systemColors
+    rsclear()
+    rssetForegroundA(systemColors.Normal);
+    rsprint(x, y, "Tasks: "); y = y + 1
+    while taskItem ~= nil do
+        local task = taskItem.value
+        printTask(x, y, task)
+        --y = y + 1
+        x, y = rsadvanceY(x, y, CRAFT_COL_WIDTH)
+        for _,v in pairs(task.dependencies) do
+            printDependency(x, y, v)
+            x, y = rsadvanceY(x, y, CRAFT_COL_WIDTH)
+        end
+
+        taskItem = taskItem.next
+    end
+    x = 210
+    y = 0
+    rssetForegroundA(systemColors.Normal);
+    rsprint(x, y, "Craft units: "); y = y + 1
+    for _,craftUnit in pairs(craftUnits) do
+        x, y = printCraftUnitInfo(x + 2, y, craftUnit)
+        x = x - 2
+        x, y = rsadvanceY(x, y, 30)
+    end
+    printAssisBox()
+    rsflush()
+end
+
+function main()
+
+    --initTestPanel()
+
+    initWallPanel()
+
+    initNetwork()
+
+    requestMakers()
+
+    initLowStockQueueing()
+
+    --printArray(stock.Coal, 2)
+
+    periodicStuff:push({
+        func = function()
+            scheduler()
+        end,
+        ref = nil
+    })
+
+    rmessage("System Operational")
+
+    local seldomCounter = 1000
+    local periodicTask
+    local counter = 0
+
+    print( " -- - INIT DONE - - --  ")
+    --error("TestError")
+
+    --error("test")
+    local timeoutLong = 1
+    local timeoutShort = 0.2
+    local timeout = timeoutShort
+
+    while true do
+        local result = {event.pull(timeout) }
+        if result[1] then
+            timeout = timeoutShort
+        else
+            timeout = timeoutLong
+        end
+        --print(result[1])
+        processEvent(result)
+
+        if periodicTask == nil then
+            periodicTask = periodicStuff.first
+        end
+        if periodicTask ~= nil then
+            if periodicTask.value.func(periodicTask.value.ref) then
+                timeout = timeoutShort
+            end
+            periodicTask = periodicTask.next
+            --print(periodicTask.value.ref.stock.resource)
+        end
+
+        if timeout > 0 or seldomCounter == 0 then
+            printScreen()
+            seldomCounter = 1000
+        else
+            seldomCounter = seldomCounter - 1
+        end
+        if counter == 0 and periodicTask ~= nil then
+        end
+        counter = counter + 1
+        if counter == 10 then
+            --return
+        end
+    end
+end
